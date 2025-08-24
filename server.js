@@ -28,23 +28,25 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Almacenar salas activas
 const rooms = new Map();
 
-// Estructura de una sala mejorada con soporte multi-plataforma
+// Estructura de una sala mejorada con soporte multi-plataforma + screen share
 class Room {
   constructor(id) {
     this.id = id;
     this.users = new Map();
     this.video = {
       url: '',
-      platform: '', // 'youtube', 'twitch', 'kick', 'drive'
+      platform: '', // 'youtube', 'twitch', 'kick', 'drive', 'screen'
       videoId: '', // ID del video/stream
       currentTime: 0,
       isPlaying: false,
       lastUpdate: Date.now(),
       duration: 0,
-      channelName: '' // Para Twitch/Kick
+      channelName: '', // Para Twitch/Kick
+      screenShareSettings: null // Para screen share
     };
     this.messages = [];
     this.voiceStatus = new Map(); // Estado de voz de cada usuario
+    this.screenSharing = new Map(); // Estado de screen sharing de cada usuario
     this.createdAt = Date.now();
   }
 
@@ -60,11 +62,37 @@ class Room {
       isMuted: true,
       isVoiceEnabled: false
     });
+
+    // Inicializar estado de screen sharing
+    this.screenSharing.set(socketId, {
+      isSharing: false,
+      settings: null
+    });
   }
 
   removeUser(socketId) {
     this.users.delete(socketId);
     this.voiceStatus.delete(socketId);
+    
+    // Si el usuario estaba compartiendo pantalla, detenerla
+    if (this.screenSharing.has(socketId) && this.screenSharing.get(socketId).isSharing) {
+      this.screenSharing.set(socketId, { isSharing: false, settings: null });
+      // Si era el único compartiendo y era screen share, limpiar video
+      if (this.video.platform === 'screen') {
+        this.video = {
+          url: '',
+          platform: '',
+          videoId: '',
+          currentTime: 0,
+          isPlaying: false,
+          lastUpdate: Date.now(),
+          duration: 0,
+          channelName: '',
+          screenShareSettings: null
+        };
+      }
+    }
+    this.screenSharing.delete(socketId);
     
     // Si se va el host, hacer host al siguiente usuario
     if (this.users.size > 0) {
@@ -81,6 +109,30 @@ class Room {
         ...this.voiceStatus.get(socketId),
         ...status
       });
+    }
+  }
+
+  updateScreenShareStatus(socketId, isSharing, settings = null) {
+    if (this.screenSharing.has(socketId)) {
+      this.screenSharing.set(socketId, {
+        isSharing: isSharing,
+        settings: settings
+      });
+
+      // Si alguien está compartiendo pantalla, actualizar el video de la sala
+      if (isSharing) {
+        this.video = {
+          url: 'Screen Share',
+          platform: 'screen',
+          videoId: socketId, // Usar el socketId como identificador
+          currentTime: 0,
+          isPlaying: true,
+          lastUpdate: Date.now(),
+          duration: 0,
+          channelName: this.users.get(socketId)?.username || 'Unknown',
+          screenShareSettings: settings
+        };
+      }
     }
   }
 
@@ -112,6 +164,14 @@ class Room {
   }
 
   parseVideoUrl(url) {
+    // Screen share (caso especial)
+    if (url === 'Screen Share') {
+      return {
+        platform: 'screen',
+        videoId: 'screen-share'
+      };
+    }
+
     // YouTube
     const youtubeRegExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
     const youtubeMatch = url.match(youtubeRegExp);
@@ -188,7 +248,8 @@ class Room {
       usersArray.push({
         ...user,
         socketId: socketId,
-        voiceStatus: this.voiceStatus.get(socketId) || { isMuted: true, isVoiceEnabled: false }
+        voiceStatus: this.voiceStatus.get(socketId) || { isMuted: true, isVoiceEnabled: false },
+        screenSharing: this.screenSharing.get(socketId) || { isSharing: false, settings: null }
       });
     }
     return usersArray;
@@ -210,6 +271,23 @@ class Room {
     
     return { totalUsers, usersWithVoice, unmutedUsers };
   }
+
+  getScreenShareStats() {
+    const totalUsers = this.users.size;
+    const usersSharing = Array.from(this.screenSharing.values()).filter(status => status.isSharing).length;
+    
+    return { totalUsers, usersSharing };
+  }
+
+  getScreenSharingUser() {
+    for (let [socketId, shareStatus] of this.screenSharing) {
+      if (shareStatus.isSharing) {
+        const user = this.users.get(socketId);
+        return user ? { socketId, ...user, ...shareStatus } : null;
+      }
+    }
+    return null;
+  }
 }
 
 // Rutas HTTP
@@ -229,14 +307,17 @@ app.get('/test', (req, res) => {
     channelName: room.video.channelName,
     isPlaying: room.video.isPlaying,
     voiceStats: room.getVoiceStats(),
+    screenShareStats: room.getScreenShareStats(),
+    screenSharingUser: room.getScreenSharingUser()?.username || null,
     createdAt: new Date(room.createdAt).toLocaleString()
   }));
 
   res.json({ 
-    message: 'Servidor funcionando correctamente con soporte multi-plataforma', 
+    message: 'Servidor funcionando correctamente con soporte multi-plataforma + Screen Share', 
     timestamp: new Date().toISOString(),
     activeRooms: rooms.size,
-    supportedPlatforms: ['YouTube', 'Twitch', 'Kick', 'Google Drive'],
+    supportedPlatforms: ['YouTube', 'Twitch', 'Kick', 'Google Drive', 'Screen Share'],
+    features: ['Voice Chat', 'Screen Sharing', 'Multi-platform Video Sync'],
     rooms: roomsInfo
   });
 });
@@ -272,6 +353,8 @@ app.get('/api/room/:roomId', (req, res) => {
     users: room.getUsersArray(),
     video: room.video,
     voiceStats: room.getVoiceStats(),
+    screenShareStats: room.getScreenShareStats(),
+    screenSharingUser: room.getScreenSharingUser(),
     createdAt: room.createdAt
   });
 });
@@ -315,7 +398,9 @@ io.on('connection', (socket) => {
       video: room.video,
       messages: room.messages.slice(-50), // Solo los últimos 50 mensajes
       isHost: room.users.get(socket.id)?.isHost || false,
-      voiceStats: room.getVoiceStats()
+      voiceStats: room.getVoiceStats(),
+      screenShareStats: room.getScreenShareStats(),
+      screenSharingUser: room.getScreenSharingUser()
     });
     
     // Notificar a otros usuarios
@@ -371,8 +456,89 @@ io.on('connection', (socket) => {
       }
     }
   });
+
+  // === EVENTOS DE SCREEN SHARE ===
   
-  // Sincronizar video (mejorado para multi-plataforma)
+  // Iniciar screen share
+  socket.on('screen-share-start', (data) => {
+    const { roomId, settings } = data;
+    const room = rooms.get(roomId?.toUpperCase());
+    
+    if (room && room.users.has(socket.id)) {
+      const user = room.users.get(socket.id);
+      
+      // Actualizar estado de screen sharing
+      room.updateScreenShareStatus(socket.id, true, settings);
+      
+      // Notificar a todos los usuarios que alguien está compartiendo pantalla
+      io.to(roomId.toUpperCase()).emit('screen-share-started', {
+        username: user.username,
+        socketId: socket.id,
+        settings: settings
+      });
+
+      // Notificar cambio de video a screen share
+      io.to(roomId.toUpperCase()).emit('video-changed', {
+        url: 'Screen Share',
+        platform: 'screen',
+        videoId: socket.id,
+        channelName: user.username,
+        username: user.username
+      });
+      
+      console.log(`🖥️ ${user.username} comenzó a compartir pantalla en sala ${roomId}`);
+      console.log(`📊 Configuración de pantalla:`, settings);
+    }
+  });
+  
+  // Detener screen share
+  socket.on('screen-share-stop', (data) => {
+    const { roomId } = data;
+    const room = rooms.get(roomId?.toUpperCase());
+    
+    if (room && room.users.has(socket.id)) {
+      const user = room.users.get(socket.id);
+      
+      // Actualizar estado de screen sharing
+      room.updateScreenShareStatus(socket.id, false, null);
+      
+      // Si era screen share activo, limpiar video de la sala
+      if (room.video.platform === 'screen' && room.video.videoId === socket.id) {
+        room.video = {
+          url: '',
+          platform: '',
+          videoId: '',
+          currentTime: 0,
+          isPlaying: false,
+          lastUpdate: Date.now(),
+          duration: 0,
+          channelName: '',
+          screenShareSettings: null
+        };
+        
+        // Notificar que el video cambió (se limpió)
+        io.to(roomId.toUpperCase()).emit('video-changed', {
+          url: '',
+          platform: '',
+          videoId: '',
+          channelName: '',
+          username: user.username
+        });
+      }
+      
+      // Notificar a todos los usuarios que se detuvo el screen share
+      io.to(roomId.toUpperCase()).emit('screen-share-stopped', {
+        username: user.username,
+        socketId: socket.id
+      });
+      
+      console.log(`🖥️ ${user.username} detuvo compartir pantalla en sala ${roomId}`);
+    }
+  });
+
+  // === FIN EVENTOS DE SCREEN SHARE ===
+  
+  // Sincronizar video (mejorado para multi-plataforma + screen share)
   socket.on('video-sync', (data) => {
     const { roomId, url, currentTime, isPlaying } = data;
     const room = rooms.get(roomId?.toUpperCase());
@@ -384,29 +550,45 @@ io.on('connection', (socket) => {
       if (currentTime !== undefined) updateData.currentTime = currentTime;
       if (isPlaying !== undefined) updateData.isPlaying = isPlaying;
       
-      room.updateVideo(updateData);
-      
-      // Broadcast a todos los usuarios de la sala excepto el emisor
-      socket.to(roomId.toUpperCase()).emit('video-synced', {
-        url: room.video.url,
-        platform: room.video.platform,
-        videoId: room.video.videoId,
-        channelName: room.video.channelName,
-        currentTime: room.video.currentTime,
-        isPlaying: room.video.isPlaying,
-        timestamp: Date.now()
-      });
-      
-      console.log(`🔄 Video sincronizado en sala ${roomId} [${room.video.platform}]: ${isPlaying ? 'Playing' : 'Paused'} at ${currentTime}s`);
+      // No sincronizar si alguien está compartiendo pantalla (es tiempo real)
+      if (room.video.platform !== 'screen') {
+        room.updateVideo(updateData);
+        
+        // Broadcast a todos los usuarios de la sala excepto el emisor
+        socket.to(roomId.toUpperCase()).emit('video-synced', {
+          url: room.video.url,
+          platform: room.video.platform,
+          videoId: room.video.videoId,
+          channelName: room.video.channelName,
+          currentTime: room.video.currentTime,
+          isPlaying: room.video.isPlaying,
+          timestamp: Date.now()
+        });
+        
+        console.log(`🔄 Video sincronizado en sala ${roomId} [${room.video.platform}]: ${isPlaying ? 'Playing' : 'Paused'} at ${currentTime}s`);
+      } else {
+        console.log(`🔄 Sincronización omitida en sala ${roomId} - Screen share activo (tiempo real)`);
+      }
     }
   });
   
-  // Cambio de video URL (mejorado para multi-plataforma)
+  // Cambio de video URL (mejorado para multi-plataforma + screen share)
   socket.on('video-change', (data) => {
     const { roomId, url } = data;
     const room = rooms.get(roomId?.toUpperCase());
     
     if (room && room.users.has(socket.id)) {
+      // Si hay screen share activo, detenerlo primero
+      const screenSharingUser = room.getScreenSharingUser();
+      if (screenSharingUser) {
+        room.updateScreenShareStatus(screenSharingUser.socketId, false, null);
+        io.to(roomId.toUpperCase()).emit('screen-share-stopped', {
+          username: screenSharingUser.username,
+          socketId: screenSharingUser.socketId
+        });
+        console.log(`🖥️ Screen share de ${screenSharingUser.username} detenido por cambio de video`);
+      }
+
       // Validar que sea una URL válida de alguna plataforma soportada
       const videoInfo = room.parseVideoUrl(url);
       if (!videoInfo) {
@@ -420,7 +602,8 @@ io.on('connection', (socket) => {
         videoId: videoInfo.videoId,
         channelName: videoInfo.channelName || '',
         currentTime: 0, 
-        isPlaying: false 
+        isPlaying: false,
+        screenShareSettings: null
       });
       
       // Notificar a todos los usuarios de la sala
@@ -484,6 +667,31 @@ io.on('connection', (socket) => {
       if (room.users.has(socket.id)) {
         const user = room.users.get(socket.id);
         const wasHost = user.isHost;
+        const wasSharing = room.screenSharing.get(socket.id)?.isSharing || false;
+        
+        // Si estaba compartiendo pantalla, notificar y limpiar
+        if (wasSharing) {
+          socket.to(roomId).emit('screen-share-stopped', {
+            username: user.username,
+            socketId: socket.id
+          });
+          
+          // Si era screen share activo, limpiar video de la sala
+          if (room.video.platform === 'screen' && room.video.videoId === socket.id) {
+            room.video = {
+              url: '',
+              platform: '',
+              videoId: '',
+              currentTime: 0,
+              isPlaying: false,
+              lastUpdate: Date.now(),
+              duration: 0,
+              channelName: '',
+              screenShareSettings: null
+            };
+          }
+          console.log(`🖥️ Screen share de ${user.username} detenido por desconexión`);
+        }
         
         room.removeUser(socket.id);
         
@@ -544,6 +752,7 @@ setInterval(() => {
   const totalUsers = Array.from(rooms.values()).reduce((sum, room) => sum + room.users.size, 0);
   const totalVoiceUsers = Array.from(rooms.values()).reduce((sum, room) => sum + room.getVoiceStats().usersWithVoice, 0);
   const totalUnmutedUsers = Array.from(rooms.values()).reduce((sum, room) => sum + room.getVoiceStats().unmutedUsers, 0);
+  const totalScreenShareUsers = Array.from(rooms.values()).reduce((sum, room) => sum + room.getScreenShareStats().usersSharing, 0);
   
   const platformStats = {};
   Array.from(rooms.values()).forEach(room => {
@@ -556,10 +765,14 @@ setInterval(() => {
     activeRooms: rooms.size,
     totalUsers: totalUsers,
     roomsWithVideo: Array.from(rooms.values()).filter(room => room.video.url).length,
+    roomsWithScreenShare: Array.from(rooms.values()).filter(room => room.video.platform === 'screen').length,
     platformDistribution: platformStats,
     voiceStats: {
       usersWithVoice: totalVoiceUsers,
       unmutedUsers: totalUnmutedUsers
+    },
+    screenShareStats: {
+      usersSharing: totalScreenShareUsers
     }
   };
   
@@ -587,7 +800,8 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`⏰ Iniciado: ${new Date().toLocaleString()}`);
   console.log(`🔧 Modo: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🎤 Soporte de voz: Habilitado`);
-  console.log(`📺 Plataformas: YouTube, Twitch, Kick, Google Drive`);
+  console.log(`🖥️ Soporte de screen share: Habilitado (1080p@60fps)`);
+  console.log(`📺 Plataformas: YouTube, Twitch, Kick, Google Drive, Screen Share`);
   console.log('================================\n');
   
   // Verificar que el archivo index.html existe

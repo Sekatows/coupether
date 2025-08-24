@@ -180,6 +180,68 @@ body {
     border: 1px solid rgba(52, 168, 83, 0.3);
 }
 
+/* Botón de compartir pantalla */
+.screen-share-btn {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    position: relative;
+    background: rgba(55, 65, 81, 0.8);
+    color: #94a3b8;
+    border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.screen-share-btn:hover {
+    background: rgba(75, 85, 99, 0.8);
+    border-color: rgba(148, 163, 184, 0.3);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.screen-share-btn.sharing {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
+    border-color: rgba(239, 68, 68, 0.3);
+    animation: pulse-sharing 2s infinite;
+}
+
+.screen-share-btn.sharing .screen-share-icon::after {
+    content: '🔴';
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    font-size: 8px;
+    animation: blink 1s infinite;
+}
+
+@keyframes pulse-sharing {
+    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0.3; }
+}
+
+.screen-share-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.screen-share-btn.disabled:hover {
+    transform: none;
+    box-shadow: none;
+}
+
 /* Botones */
 .btn-load, .btn-leave {
     padding: 10px 16px;
@@ -290,6 +352,12 @@ body {
     background: rgba(52, 168, 83, 0.1);
     color: #34a853;
     border: 1px solid rgba(52, 168, 83, 0.2);
+}
+
+.platform-badge.screen {
+    background: rgba(139, 92, 246, 0.1);
+    color: #8b5cf6;
+    border: 1px solid rgba(139, 92, 246, 0.2);
 }
 
 .actions-grid {
@@ -846,6 +914,12 @@ body {
     .chat-panel {
         width: 100%;
         height: 40vh;
+    }
+    
+    .screen-share-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 16px;
     }
 }
 

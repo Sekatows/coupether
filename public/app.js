@@ -25,6 +25,12 @@ let audioChunks = [];
 let audioInterval = null;
 let audioProcessors = new Map();
 
+// Variables de compartir pantalla
+let screenStream = null;
+let isScreenSharing = false;
+let screenRecorder = null;
+let screenShareSender = null;
+
 // Estado de conexión
 function updateConnectionStatus(message, type) {
     const statusContainer = document.getElementById('connectionStatus');
@@ -86,7 +92,8 @@ function updatePlatformIndicator(platform) {
         youtube: 'YouTube',
         twitch: 'Twitch',
         kick: 'Kick',
-        drive: 'Drive'
+        drive: 'Drive',
+        screen: 'Screen Share'
     };
     
     text.textContent = platformNames[platform] || platform.charAt(0).toUpperCase() + platform.slice(1);
@@ -115,13 +122,178 @@ function getYouTubeVideoId(url) {
     return (match && match[2].length === 11) ? match[2] : null;
 }
 
+// === FUNCIONES DE COMPARTIR PANTALLA ===
+async function initScreenShare() {
+    try {
+        const constraints = {
+            video: {
+                mediaSource: 'screen',
+                width: { ideal: 1920, max: 1920 },
+                height: { ideal: 1080, max: 1080 },
+                frameRate: { ideal: 60, max: 60 }
+            },
+            audio: {
+                echoCancellation: true,
+                noiseSuppression: true,
+                autoGainControl: true
+            }
+        };
+
+        screenStream = await navigator.mediaDevices.getDisplayMedia(constraints);
+        
+        // Detectar cuando el usuario deja de compartir desde el navegador
+        screenStream.getVideoTracks()[0].addEventListener('ended', () => {
+            stopScreenShare();
+        });
+
+        isScreenSharing = true;
+        updateScreenShareButton();
+        
+        console.log('🖥️ Screen share iniciado:', screenStream.getVideoTracks()[0].getSettings());
+        
+        // Crear reproductor para la pantalla compartida
+        createScreenPlayer();
+        
+        // Notificar a la sala que se está compartiendo pantalla
+        if (currentRoom) {
+            socket.emit('screen-share-start', {
+                roomId: currentRoom,
+                settings: screenStream.getVideoTracks()[0].getSettings()
+            });
+        }
+
+        return true;
+    } catch (error) {
+        console.error('❌ Error al iniciar screen share:', error);
+        
+        if (error.name === 'NotAllowedError') {
+            addSystemMessage('Screen sharing permission was denied');
+        } else if (error.name === 'NotSupportedError') {
+            addSystemMessage('Screen sharing is not supported in this browser');
+        } else {
+            addSystemMessage('Error starting screen share: ' + error.message);
+        }
+        
+        isScreenSharing = false;
+        updateScreenShareButton();
+        return false;
+    }
+}
+
+function createScreenPlayer() {
+    // Limpiar reproductor anterior
+    if (currentPlayer) {
+        if (currentPlatform === 'youtube' && currentPlayer.destroy) {
+            currentPlayer.destroy();
+        } else if ((currentPlatform === 'drive' || currentPlatform === 'screen') && currentPlayer.pause) {
+            currentPlayer.pause();
+        }
+        currentPlayer = null;
+    }
+
+    document.getElementById('noVideo').style.display = 'none';
+    const playerContainer = document.getElementById('player');
+    playerContainer.innerHTML = '';
+
+    currentPlatform = 'screen';
+    isPlayerReady = false;
+
+    // Crear elemento video para la pantalla compartida
+    const video = document.createElement('video');
+    video.srcObject = screenStream;
+    video.width = '100%';
+    video.height = '100%';
+    video.autoplay = true;
+    video.muted = true; // Evitar eco del audio del sistema
+    video.style.width = '100%';
+    video.style.height = '100%';
+    video.style.backgroundColor = '#000';
+    video.style.objectFit = 'contain';
+    
+    video.onloadedmetadata = () => {
+        isPlayerReady = true;
+        console.log('🖥️ Screen share player ready');
+    };
+
+    // No necesitamos eventos de play/pause para screen share ya que es en tiempo real
+    
+    playerContainer.appendChild(video);
+    currentPlayer = video;
+    
+    // Actualizar la URL para mostrar que se está compartiendo pantalla
+    document.getElementById('videoUrl').value = 'Screen Share Active';
+    updatePlatformIndicator('screen');
+}
+
+function stopScreenShare() {
+    if (screenStream) {
+        screenStream.getTracks().forEach(track => track.stop());
+        screenStream = null;
+    }
+    
+    isScreenSharing = false;
+    updateScreenShareButton();
+    
+    // Limpiar el reproductor
+    if (currentPlatform === 'screen') {
+        document.getElementById('player').innerHTML = '';
+        document.getElementById('noVideo').style.display = 'flex';
+        document.getElementById('videoUrl').value = '';
+        updatePlatformIndicator(null);
+        currentPlayer = null;
+        currentPlatform = null;
+    }
+    
+    // Notificar a la sala que se dejó de compartir pantalla
+    if (currentRoom) {
+        socket.emit('screen-share-stop', {
+            roomId: currentRoom
+        });
+    }
+    
+    console.log('🖥️ Screen share detenido');
+}
+
+async function toggleScreenShare() {
+    if (!currentRoom) {
+        alert('You must be in a room to share your screen');
+        return;
+    }
+
+    if (isScreenSharing) {
+        stopScreenShare();
+        addSystemMessage('You stopped sharing your screen');
+    } else {
+        const success = await initScreenShare();
+        if (success) {
+            addSystemMessage('You started sharing your screen');
+        }
+    }
+}
+
+function updateScreenShareButton() {
+    const btn = document.getElementById('screenShareBtn');
+    
+    if (isScreenSharing) {
+        btn.classList.add('sharing');
+        btn.title = 'Stop sharing screen';
+        btn.querySelector('.screen-share-icon').textContent = '🛑';
+    } else {
+        btn.classList.remove('sharing');
+        btn.title = 'Share screen';
+        btn.querySelector('.screen-share-icon').textContent = '🖥️';
+    }
+}
+
+// === FIN FUNCIONES DE COMPARTIR PANTALLA ===
+
 // Crear reproductor según la plataforma
 function createPlayer(platform, videoId) {
     // Limpiar reproductor anterior
     if (currentPlayer) {
         if (currentPlatform === 'youtube' && currentPlayer.destroy) {
             currentPlayer.destroy();
-        } else if (currentPlatform === 'drive' && currentPlayer.pause) {
+        } else if ((currentPlatform === 'drive' || currentPlatform === 'screen') && currentPlayer.pause) {
             currentPlayer.pause();
         }
         currentPlayer = null;
@@ -146,6 +318,9 @@ function createPlayer(platform, videoId) {
             break;
         case 'drive':
             createDrivePlayer(videoId);
+            break;
+        case 'screen':
+            // Screen share se maneja por separado
             break;
     }
 }
@@ -622,6 +797,9 @@ function syncVideo(data) {
             }
         }, 50);
         
+    } else if (currentPlatform === 'screen') {
+        // Screen share no necesita sincronización ya que es en tiempo real
+        console.log(`🔄 Screen share - no sync needed (real-time)`);
     } else {
         console.log(`🔄 ${currentPlatform} sincronización (streams en vivo no requieren sync de tiempo)`);
     }
@@ -692,6 +870,8 @@ function initSocket() {
             let mediaType = 'video';
             if (data.platform === 'twitch' || data.platform === 'kick') {
                 mediaType = 'stream';
+            } else if (data.platform === 'screen') {
+                mediaType = 'screen share';
             }
             
             addSystemMessage(`${platformName} ${mediaType} changed: ${displayName}`);
@@ -713,6 +893,15 @@ function initSocket() {
 
     socket.on('voice-data', (data) => {
         processIncomingAudio(data.audioData, data.socketId);
+    });
+
+    // Eventos de screen share
+    socket.on('screen-share-started', (data) => {
+        addSystemMessage(`${data.username} started sharing their screen`);
+    });
+
+    socket.on('screen-share-stopped', (data) => {
+        addSystemMessage(`${data.username} stopped sharing their screen`);
     });
 
     socket.on('error', (data) => {
@@ -812,6 +1001,7 @@ function showRoomScreen(data) {
     document.getElementById('urlInputNav').classList.remove('hidden');
     document.getElementById('roomInfoNav').classList.remove('hidden');
     document.getElementById('leaveBtn').classList.remove('hidden');
+    document.getElementById('screenShareBtn').classList.remove('hidden');
     
     document.getElementById('currentRoom').textContent = data.roomId;
     updateUserCount(data.users ? data.users.length : 1);
@@ -840,6 +1030,11 @@ function loadVideo() {
     if (!detection) {
         alert('Invalid URL. Supported platforms: YouTube, Twitch, Kick, Google Drive');
         return;
+    }
+    
+    // Detener screen share si está activo
+    if (isScreenSharing) {
+        stopScreenShare();
     }
     
     createPlayer(detection.platform, detection.id);
@@ -903,10 +1098,15 @@ function leaveRoom() {
     if (confirm('Are you sure you want to leave?')) {
         cleanupVoice();
         
+        // Detener screen share si está activo
+        if (isScreenSharing) {
+            stopScreenShare();
+        }
+        
         if (currentPlayer) {
             if (currentPlatform === 'youtube' && currentPlayer.destroy) {
                 currentPlayer.destroy();
-            } else if (currentPlatform === 'drive' && currentPlayer.pause) {
+            } else if ((currentPlatform === 'drive' || currentPlatform === 'screen') && currentPlayer.pause) {
                 currentPlayer.pause();
             }
         }
@@ -946,13 +1146,16 @@ document.addEventListener('keydown', (e) => {
     }
 });
 
-// Limpiar audio al cerrar la pestaña
+// Limpiar recursos al cerrar la pestaña
 window.addEventListener('beforeunload', () => {
     cleanupVoice();
+    if (isScreenSharing) {
+        stopScreenShare();
+    }
 });
 
 // Iniciar cuando se carga la página
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('🚀 Page loaded, starting Coupether with multi-platform support including Google Drive...');
+    console.log('🚀 Page loaded, starting Coupether with multi-platform support including Google Drive and Screen Share...');
     initSocket();
 });

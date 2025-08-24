@@ -30,6 +30,11 @@
             </div>
             
             <div class="navbar-right">
+                <!-- Botón de compartir pantalla solo visible en sala -->
+                <button id="screenShareBtn" onclick="toggleScreenShare()" class="screen-share-btn hidden" title="Share Screen">
+                    <span class="screen-share-icon">🖥️</span>
+                </button>
+                
                 <!-- Info de sala solo visible en sala -->
                 <div id="roomInfoNav" class="room-info-nav hidden">
                     <span>Room <span id="currentRoom" class="room-code-nav"></span></span>
@@ -45,12 +50,13 @@
             <div class="home-header">
                 <h1 class="home-logo">Coupether</h1>
                 <p class="tagline">Watch videos together, anywhere</p>
-                <p class="supported-platforms">Now supporting multiple platforms</p>
+                <p class="supported-platforms">Now supporting multiple platforms + Screen Sharing</p>
                 <div class="platform-badges">
                     <span class="platform-badge youtube">YouTube</span>
                     <span class="platform-badge twitch">Twitch</span>
                     <span class="platform-badge kick">Kick</span>
                     <span class="platform-badge drive">Google Drive</span>
+                    <span class="platform-badge screen">Screen Share</span>
                 </div>
             </div>
             
@@ -81,9 +87,9 @@
                         <div class="empty-state">
                             <div class="empty-icon">📺</div>
                             <h3>Ready to watch together?</h3>
-                            <p>Paste a URL above to get started</p>
+                            <p>Paste a URL above or share your screen to get started</p>
                             <div class="supported-urls">
-                                YouTube • Twitch • Kick • Google Drive
+                                YouTube • Twitch • Kick • Google Drive • Screen Share
                             </div>
                         </div>
                     </div>
