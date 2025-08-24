@@ -478,86 +478,6 @@
             color: #9ca3af;
         }
 
-        /* Controles de video */
-        .video-controls {
-            position: absolute;
-            bottom: 20px;
-            left: 20px;
-            right: 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 16px 20px;
-            background: rgba(30, 41, 59, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 12px;
-            color: white;
-            border: 1px solid rgba(148, 163, 184, 0.1);
-        }
-
-        .playback-controls {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-        }
-
-        .control-btn {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.15);
-            border: none;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 14px;
-            transition: all 0.2s ease;
-            color: white;
-            cursor: pointer;
-        }
-
-        .control-btn:hover:not(:disabled) {
-            background: rgba(139, 92, 246, 0.6);
-        }
-
-        .control-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .time-display {
-            font-size: 14px;
-            font-weight: 500;
-            color: rgba(255, 255, 255, 0.8);
-            font-family: 'Monaco', 'Courier New', monospace;
-        }
-
-        .sync-status {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 16px;
-            background: rgba(34, 197, 94, 0.2);
-            color: #22c55e;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: 500;
-            border: 1px solid rgba(34, 197, 94, 0.3);
-        }
-
-        .sync-indicator {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: #22c55e;
-            animation: pulse-sync 2s infinite;
-        }
-
-        @keyframes pulse-sync {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
         /* Panel de chat */
         .chat-panel {
             width: 350px;
@@ -848,13 +768,6 @@
                 width: 100%;
                 height: 40vh;
             }
-            
-            .video-controls {
-                position: static;
-                margin: 0;
-                border-radius: 0;
-                background: rgba(30, 41, 59, 0.95);
-            }
         }
 
         /* Efectos adicionales de glassmorphism */
@@ -941,22 +854,6 @@
                         </div>
                     </div>
                 </div>
-                
-                <div class="video-controls">
-                    <div class="playback-controls">
-                        <button id="playBtn" onclick="togglePlay()" disabled class="control-btn">
-                            <span class="play-icon">▶</span>
-                        </button>
-                        <button id="pauseBtn" onclick="togglePlay()" disabled class="control-btn">
-                            <span class="pause-icon">⏸</span>
-                        </button>
-                        <span id="timeDisplay" class="time-display">00:00 / 00:00</span>
-                    </div>
-                    <div id="syncStatus" class="sync-status hidden">
-                        <span class="sync-indicator">●</span>
-                        <span class="sync-text">Synced</span>
-                    </div>
-                </div>
             </div>
             
             <div class="chat-panel">
@@ -1021,14 +918,12 @@
         let youtubePlayer = null;
         let isPlayerReady = false;
         let isSyncing = false;
-        let syncTimeout = null;
 
         // Variables de sincronización mejoradas
-        let lastKnownTime = 0;
-        let lastKnownState = -1;
-        let syncThreshold = 1.5; // Reducido de 2 a 1.5 segundos
+        let syncThreshold = 0.8; // Umbral más bajo para sincronizar más rápido
         let lastSyncTime = 0;
-        let syncCooldown = 500; // Cooldown de 500ms entre syncs
+        let syncCooldown = 200; // Cooldown más corto
+        let syncBuffer = 0.3; // Buffer para compensar latencia
 
         // Variables de audio/voz
         let localStream = null;
@@ -1040,7 +935,7 @@
         let mediaRecorder = null;
         let audioChunks = [];
         let audioInterval = null;
-        let audioProcessors = new Map(); // Para almacenar los procesadores de audio de otros usuarios
+        let audioProcessors = new Map();
 
         // Estado de conexión
         function updateConnectionStatus(message, type) {
@@ -1099,17 +994,13 @@
         function onPlayerReady(event) {
             console.log('🎬 Reproductor listo');
             isPlayerReady = true;
-            document.getElementById('playBtn').disabled = false;
-            document.getElementById('pauseBtn').disabled = false;
-            
-            setInterval(updateTimeDisplay, 1000);
         }
 
         function onPlayerStateChange(event) {
             if (!isPlayerReady || isSyncing) return;
 
             const now = Date.now();
-            if (now - lastSyncTime < syncCooldown) return; // Evitar spam de sync
+            if (now - lastSyncTime < syncCooldown) return;
 
             const currentTime = youtubePlayer.getCurrentTime();
             const isPlaying = event.data === YT.PlayerState.PLAYING;
@@ -1123,8 +1014,6 @@
                 isPlaying: isPlaying,
                 timestamp: now
             });
-
-            showSyncStatus();
         }
 
         // === FUNCIONES DE VOZ MEJORADAS ===
@@ -1388,72 +1277,39 @@
 
         // === FIN FUNCIONES DE VOZ MEJORADAS ===
 
-        function updateTimeDisplay() {
-            if (youtubePlayer && isPlayerReady) {
-                const currentTime = youtubePlayer.getCurrentTime();
-                const duration = youtubePlayer.getDuration();
-                
-                const current = formatTime(currentTime);
-                const total = formatTime(duration);
-                
-                document.getElementById('timeDisplay').textContent = `${current} / ${total}`;
-            }
-        }
-
-        function formatTime(seconds) {
-            const mins = Math.floor(seconds / 60);
-            const secs = Math.floor(seconds % 60);
-            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-        }
-
-        function showSyncStatus() {
-            const status = document.getElementById('syncStatus');
-            const text = status.querySelector('.sync-text');
-            
-            status.classList.remove('hidden');
-            text.textContent = 'Syncing...';
-            
-            if (syncTimeout) clearTimeout(syncTimeout);
-            syncTimeout = setTimeout(() => {
-                text.textContent = 'Synced';
-                setTimeout(() => {
-                    status.classList.add('hidden');
-                }, 1500);
-            }, 800);
-        }
-
-        // Sincronización mejorada
+        // Sincronización mejorada y más suave
         function syncVideo(data) {
             if (!youtubePlayer || !isPlayerReady) return;
             
             const now = Date.now();
-            const latency = data.timestamp ? now - data.timestamp : 0;
-            const adjustedTime = data.currentTime + (latency / 1000);
+            const latency = data.timestamp ? (now - data.timestamp) / 1000 : 0;
+            const adjustedTime = data.currentTime + latency + syncBuffer;
             
             isSyncing = true;
             
-            const timeDiff = Math.abs(youtubePlayer.getCurrentTime() - adjustedTime);
+            const currentTime = youtubePlayer.getCurrentTime();
+            const timeDiff = Math.abs(currentTime - adjustedTime);
             
-            // Sincronizar tiempo solo si hay diferencia significativa
+            // Umbral más bajo para sincronización más precisa
             if (timeDiff > syncThreshold) {
                 youtubePlayer.seekTo(adjustedTime, true);
                 console.log(`🔄 Ajustando tiempo: ${timeDiff.toFixed(2)}s de diferencia`);
             }
             
-            // Sincronizar estado de reproducción con menos delay
+            // Sincronizar estado de reproducción más rápido
             const currentState = youtubePlayer.getPlayerState();
-            if (data.isPlaying && currentState !== YT.PlayerState.PLAYING && currentState !== YT.PlayerState.BUFFERING) {
-                youtubePlayer.playVideo();
-            } else if (!data.isPlaying && currentState === YT.PlayerState.PLAYING) {
-                youtubePlayer.pauseVideo();
-            }
+            setTimeout(() => {
+                if (data.isPlaying && currentState !== YT.PlayerState.PLAYING && currentState !== YT.PlayerState.BUFFERING) {
+                    youtubePlayer.playVideo();
+                } else if (!data.isPlaying && currentState === YT.PlayerState.PLAYING) {
+                    youtubePlayer.pauseVideo();
+                }
+            }, 50); // Delay mínimo para evitar conflictos
             
-            // Reducir tiempo de bloqueo de sync
+            // Tiempo de bloqueo más corto
             setTimeout(() => {
                 isSyncing = false;
-            }, 300);
-            
-            showSyncStatus();
+            }, 150);
         }
 
         // Inicializar conexión
@@ -1544,17 +1400,15 @@
             if (videoData && videoData.videoId) {
                 createYouTubePlayer(videoData.videoId);
                 
-                // Sincronizar después de que el video esté listo
+                // Sincronizar después de que el video esté listo con mejor timing
                 setTimeout(() => {
                     if (youtubePlayer && isPlayerReady) {
                         youtubePlayer.seekTo(videoData.currentTime || 0, true);
                         if (videoData.isPlaying) {
-                            youtubePlayer.playVideo();
-                        } else {
-                            youtubePlayer.pauseVideo();
+                            setTimeout(() => youtubePlayer.playVideo(), 200);
                         }
                     }
-                }, 2000);
+                }, 1000);
             }
         }
 
@@ -1657,17 +1511,6 @@
             addSystemMessage('Video loaded: ' + url);
         }
 
-        // Controles de video
-        function togglePlay() {
-            if (!youtubePlayer || !isPlayerReady) return;
-            
-            if (youtubePlayer.getPlayerState() === YT.PlayerState.PLAYING) {
-                youtubePlayer.pauseVideo();
-            } else {
-                youtubePlayer.playVideo();
-            }
-        }
-
         // Chat
         function sendMessage() {
             const input = document.getElementById('messageInput');
@@ -1715,7 +1558,7 @@
         // Salir de sala
         function leaveRoom() {
             if (confirm('Are you sure you want to leave?')) {
-                cleanupVoice(); // Limpiar recursos de audio
+                cleanupVoice();
                 
                 if (youtubePlayer) {
                     youtubePlayer.destroy();
