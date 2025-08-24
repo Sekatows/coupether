@@ -151,6 +151,37 @@
             color: #9ca3af;
         }
 
+        /* Platform indicator */
+        .platform-indicator {
+            display: none;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .platform-indicator.youtube {
+            background: rgba(255, 0, 0, 0.2);
+            color: #ff4444;
+            border: 1px solid rgba(255, 0, 0, 0.3);
+        }
+
+        .platform-indicator.twitch {
+            background: rgba(145, 70, 255, 0.2);
+            color: #9146ff;
+            border: 1px solid rgba(145, 70, 255, 0.3);
+        }
+
+        .platform-indicator.kick {
+            background: rgba(83, 255, 26, 0.2);
+            color: #53ff1a;
+            border: 1px solid rgba(83, 255, 26, 0.3);
+        }
+
         /* Botones */
         .btn-load, .btn-leave {
             padding: 10px 16px;
@@ -217,6 +248,44 @@
             font-size: 18px;
             font-weight: 400;
             margin: 0;
+        }
+
+        .supported-platforms {
+            margin-top: 16px;
+            color: #64748b;
+            font-size: 14px;
+        }
+
+        .platform-badges {
+            display: flex;
+            justify-content: center;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .platform-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .platform-badge.youtube {
+            background: rgba(255, 0, 0, 0.1);
+            color: #ff4444;
+            border: 1px solid rgba(255, 0, 0, 0.2);
+        }
+
+        .platform-badge.twitch {
+            background: rgba(145, 70, 255, 0.1);
+            color: #9146ff;
+            border: 1px solid rgba(145, 70, 255, 0.2);
+        }
+
+        .platform-badge.kick {
+            background: rgba(83, 255, 26, 0.1);
+            color: #53ff1a;
+            border: 1px solid rgba(83, 255, 26, 0.2);
         }
 
         .actions-grid {
@@ -476,6 +545,12 @@
         .empty-state p {
             font-size: 16px;
             color: #9ca3af;
+            margin-bottom: 16px;
+        }
+
+        .supported-urls {
+            font-size: 14px;
+            color: #64748b;
         }
 
         /* Panel de chat */
@@ -800,7 +875,10 @@
                 
                 <!-- URL Input solo visible en sala -->
                 <div id="urlInputNav" class="url-input-container hidden">
-                    <input type="text" id="videoUrl" placeholder="Paste YouTube URL here..." class="video-url-input">
+                    <input type="text" id="videoUrl" placeholder="Paste YouTube, Twitch or Kick URL here..." class="video-url-input">
+                    <div id="platformIndicator" class="platform-indicator">
+                        <span id="platformText">Platform</span>
+                    </div>
                     <button onclick="loadVideo()" class="btn-load">Load</button>
                 </div>
             </div>
@@ -821,6 +899,12 @@
             <div class="home-header">
                 <h1 class="home-logo">Coupether</h1>
                 <p class="tagline">Watch videos together, anywhere</p>
+                <p class="supported-platforms">Now supporting multiple platforms</p>
+                <div class="platform-badges">
+                    <span class="platform-badge youtube">YouTube</span>
+                    <span class="platform-badge twitch">Twitch</span>
+                    <span class="platform-badge kick">Kick</span>
+                </div>
             </div>
             
             <div class="actions-grid">
@@ -850,7 +934,10 @@
                         <div class="empty-state">
                             <div class="empty-icon">📺</div>
                             <h3>Ready to watch together?</h3>
-                            <p>Paste a YouTube URL above to get started</p>
+                            <p>Paste a URL above to get started</p>
+                            <div class="supported-urls">
+                                YouTube • Twitch • Kick
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -915,15 +1002,16 @@
         let socket;
         let currentRoom = null;
         let currentUser = null;
-        let youtubePlayer = null;
+        let currentPlatform = null;
+        let currentPlayer = null;
         let isPlayerReady = false;
         let isSyncing = false;
 
         // Variables de sincronización mejoradas
-        let syncThreshold = 0.8; // Umbral más bajo para sincronizar más rápido
+        let syncThreshold = 0.8;
         let lastSyncTime = 0;
-        let syncCooldown = 200; // Cooldown más corto
-        let syncBuffer = 0.3; // Buffer para compensar latencia
+        let syncCooldown = 200;
+        let syncBuffer = 0.3;
 
         // Variables de audio/voz
         let localStream = null;
@@ -953,6 +1041,54 @@
             }
         }
 
+        // Detectar plataforma de URL
+        function detectPlatform(url) {
+            // YouTube
+            if (url.match(/^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/)) {
+                return { platform: 'youtube', id: getYouTubeVideoId(url) };
+            }
+            
+            // Twitch
+            const twitchMatch = url.match(/(?:https?:\/\/)?(?:www\.)?twitch\.tv\/([a-zA-Z0-9_]+)/);
+            if (twitchMatch) {
+                return { platform: 'twitch', id: twitchMatch[1] };
+            }
+            
+            // Kick
+            const kickMatch = url.match(/(?:https?:\/\/)?(?:www\.)?kick\.com\/([a-zA-Z0-9_]+)/);
+            if (kickMatch) {
+                return { platform: 'kick', id: kickMatch[1] };
+            }
+            
+            return null;
+        }
+
+        // Actualizar indicador de plataforma
+        function updatePlatformIndicator(platform) {
+            const indicator = document.getElementById('platformIndicator');
+            const text = document.getElementById('platformText');
+            
+            if (!platform) {
+                indicator.style.display = 'none';
+                return;
+            }
+            
+            indicator.style.display = 'flex';
+            indicator.className = `platform-indicator ${platform}`;
+            text.textContent = platform.charAt(0).toUpperCase() + platform.slice(1);
+        }
+
+        // Detectar plataforma mientras se escribe
+        document.getElementById('videoUrl').addEventListener('input', (e) => {
+            const url = e.target.value.trim();
+            if (url) {
+                const detection = detectPlatform(url);
+                updatePlatformIndicator(detection ? detection.platform : null);
+            } else {
+                updatePlatformIndicator(null);
+            }
+        });
+
         // Inicializar YouTube API
         function onYouTubeIframeAPIReady() {
             console.log('📺 YouTube API lista');
@@ -965,15 +1101,38 @@
             return (match && match[2].length === 11) ? match[2] : null;
         }
 
-        // Crear reproductor de YouTube
-        function createYouTubePlayer(videoId) {
-            if (youtubePlayer) {
-                youtubePlayer.destroy();
+        // Crear reproductor según la plataforma
+        function createPlayer(platform, videoId) {
+            // Limpiar reproductor anterior
+            if (currentPlayer) {
+                if (platform === 'youtube' && currentPlayer.destroy) {
+                    currentPlayer.destroy();
+                }
+                currentPlayer = null;
             }
 
             document.getElementById('noVideo').style.display = 'none';
+            const playerContainer = document.getElementById('player');
+            playerContainer.innerHTML = '';
 
-            youtubePlayer = new YT.Player('player', {
+            currentPlatform = platform;
+
+            switch (platform) {
+                case 'youtube':
+                    createYouTubePlayer(videoId);
+                    break;
+                case 'twitch':
+                    createTwitchPlayer(videoId);
+                    break;
+                case 'kick':
+                    createKickPlayer(videoId);
+                    break;
+            }
+        }
+
+        // Crear reproductor de YouTube
+        function createYouTubePlayer(videoId) {
+            currentPlayer = new YT.Player('player', {
                 height: '100%',
                 width: '100%',
                 videoId: videoId,
@@ -986,26 +1145,66 @@
                 },
                 events: {
                     'onReady': onPlayerReady,
-                    'onStateChange': onPlayerStateChange
+                    'onStateChange': onYouTubeStateChange
                 }
             });
         }
 
+        // Crear reproductor de Twitch
+        function createTwitchPlayer(channel) {
+            const iframe = document.createElement('iframe');
+            iframe.src = `https://player.twitch.tv/?channel=${channel}&parent=${window.location.hostname}&autoplay=false`;
+            iframe.width = '100%';
+            iframe.height = '100%';
+            iframe.frameBorder = '0';
+            iframe.allowFullscreen = true;
+            iframe.style.border = 'none';
+            
+            document.getElementById('player').appendChild(iframe);
+            currentPlayer = iframe;
+            
+            // Simular evento de ready para Twitch
+            setTimeout(() => {
+                isPlayerReady = true;
+                console.log('📺 Twitch player ready');
+            }, 1000);
+        }
+
+        // Crear reproductor de Kick
+        function createKickPlayer(channel) {
+            const iframe = document.createElement('iframe');
+            iframe.src = `https://player.kick.com/${channel}`;
+            iframe.width = '100%';
+            iframe.height = '100%';
+            iframe.frameBorder = '0';
+            iframe.allowFullscreen = true;
+            iframe.style.border = 'none';
+            
+            document.getElementById('player').appendChild(iframe);
+            currentPlayer = iframe;
+            
+            // Simular evento de ready para Kick
+            setTimeout(() => {
+                isPlayerReady = true;
+                console.log('📺 Kick player ready');
+            }, 1000);
+        }
+
         function onPlayerReady(event) {
-            console.log('🎬 Reproductor listo');
+            console.log('🎬 YouTube player ready');
             isPlayerReady = true;
         }
 
-        function onPlayerStateChange(event) {
-            if (!isPlayerReady || isSyncing) return;
+        function onYouTubeStateChange(event) {
+            if (!isPlayerReady || isSyncing || currentPlatform !== 'youtube') return;
 
             const now = Date.now();
             if (now - lastSyncTime < syncCooldown) return;
 
-            const currentTime = youtubePlayer.getCurrentTime();
+            const currentTime = currentPlayer.getCurrentTime();
             const isPlaying = event.data === YT.PlayerState.PLAYING;
             
-            console.log(`🎮 Estado cambió: ${isPlaying ? 'Playing' : 'Paused'} en ${currentTime.toFixed(2)}s`);
+            console.log(`🎮 YouTube estado cambió: ${isPlaying ? 'Playing' : 'Paused'} en ${currentTime.toFixed(2)}s`);
             
             lastSyncTime = now;
             socket.emit('video-sync', {
@@ -1207,7 +1406,7 @@
             
             // Crear elemento de audio para reproducir
             const audioElement = new Audio(audioUrl);
-            audioElement.volume = 0.7; // Volumen moderado
+            audioElement.volume = 0.7;
             
             // Si ya existe un procesador para este usuario, detenerlo
             if (audioProcessors.has(socketId)) {
@@ -1221,11 +1420,10 @@
             // Guardar y reproducir el nuevo audio
             audioProcessors.set(socketId, audioElement);
             
-            // Reproducir el audio con un pequeño retraso para evitar problemas de sincronización
+            // Reproducir el audio con un pequeño retraso
             setTimeout(() => {
                 audioElement.play().catch(e => {
                     console.error('Error reproduciendo audio:', e);
-                    // Si hay un error de autoplay, solicitar interacción del usuario
                     if (e.name === 'NotAllowedError') {
                         addSystemMessage('Click anywhere to enable audio playback');
                         document.body.addEventListener('click', function enableAudio() {
@@ -1275,38 +1473,40 @@
             updateVoiceStatus();
         }
 
-        // === FIN FUNCIONES DE VOZ MEJORADAS ===
+        // === FIN FUNCIONES DE VOZ ===
 
-        // Sincronización mejorada y más suave
+        // Sincronización mejorada para múltiples plataformas
         function syncVideo(data) {
-            if (!youtubePlayer || !isPlayerReady) return;
+            if (!currentPlayer || !isPlayerReady) return;
             
             const now = Date.now();
             const latency = data.timestamp ? (now - data.timestamp) / 1000 : 0;
-            const adjustedTime = data.currentTime + latency + syncBuffer;
             
             isSyncing = true;
             
-            const currentTime = youtubePlayer.getCurrentTime();
-            const timeDiff = Math.abs(currentTime - adjustedTime);
-            
-            // Umbral más bajo para sincronización más precisa
-            if (timeDiff > syncThreshold) {
-                youtubePlayer.seekTo(adjustedTime, true);
-                console.log(`🔄 Ajustando tiempo: ${timeDiff.toFixed(2)}s de diferencia`);
+            // Solo sincronizar YouTube (las otras plataformas son streams en vivo)
+            if (currentPlatform === 'youtube') {
+                const adjustedTime = data.currentTime + latency + syncBuffer;
+                const currentTime = currentPlayer.getCurrentTime();
+                const timeDiff = Math.abs(currentTime - adjustedTime);
+                
+                if (timeDiff > syncThreshold) {
+                    currentPlayer.seekTo(adjustedTime, true);
+                    console.log(`🔄 YouTube ajustando tiempo: ${timeDiff.toFixed(2)}s de diferencia`);
+                }
+                
+                const currentState = currentPlayer.getPlayerState();
+                setTimeout(() => {
+                    if (data.isPlaying && currentState !== YT.PlayerState.PLAYING && currentState !== YT.PlayerState.BUFFERING) {
+                        currentPlayer.playVideo();
+                    } else if (!data.isPlaying && currentState === YT.PlayerState.PLAYING) {
+                        currentPlayer.pauseVideo();
+                    }
+                }, 50);
+            } else {
+                console.log(`🔄 ${currentPlatform} sincronización (streams en vivo no requieren sync de tiempo)`);
             }
             
-            // Sincronizar estado de reproducción más rápido
-            const currentState = youtubePlayer.getPlayerState();
-            setTimeout(() => {
-                if (data.isPlaying && currentState !== YT.PlayerState.PLAYING && currentState !== YT.PlayerState.BUFFERING) {
-                    youtubePlayer.playVideo();
-                } else if (!data.isPlaying && currentState === YT.PlayerState.PLAYING) {
-                    youtubePlayer.pauseVideo();
-                }
-            }, 50); // Delay mínimo para evitar conflictos
-            
-            // Tiempo de bloqueo más corto
             setTimeout(() => {
                 isSyncing = false;
             }, 150);
@@ -1364,11 +1564,12 @@
             });
 
             socket.on('video-changed', (data) => {
-                console.log('📺 Video cambiado:', data.url);
-                const videoId = getYouTubeVideoId(data.url);
-                if (videoId) {
-                    createYouTubePlayer(videoId);
-                    addSystemMessage('Video changed by another user');
+                console.log('📺 Video cambiado:', data);
+                if (data.platform && data.videoId) {
+                    createPlayer(data.platform, data.videoId);
+                    const platformName = data.platform.charAt(0).toUpperCase() + data.platform.slice(1);
+                    const displayName = data.channelName || data.videoId;
+                    addSystemMessage(`${platformName} ${data.platform === 'youtube' ? 'video' : 'stream'} changed: ${displayName}`);
                 }
             });
 
@@ -1385,7 +1586,6 @@
                 addSystemMessage(`${data.username} ${data.isMuted ? 'muted' : 'unmuted'} their microphone`);
             });
 
-            // Recibir datos de audio
             socket.on('voice-data', (data) => {
                 processIncomingAudio(data.audioData, data.socketId);
             });
@@ -1397,18 +1597,22 @@
         }
 
         function loadVideoFromData(videoData) {
-            if (videoData && videoData.videoId) {
-                createYouTubePlayer(videoData.videoId);
+            if (videoData && videoData.platform && videoData.videoId) {
+                createPlayer(videoData.platform, videoData.videoId);
+                document.getElementById('videoUrl').value = videoData.url || '';
+                updatePlatformIndicator(videoData.platform);
                 
-                // Sincronizar después de que el video esté listo con mejor timing
-                setTimeout(() => {
-                    if (youtubePlayer && isPlayerReady) {
-                        youtubePlayer.seekTo(videoData.currentTime || 0, true);
-                        if (videoData.isPlaying) {
-                            setTimeout(() => youtubePlayer.playVideo(), 200);
+                // Solo sincronizar tiempo para YouTube
+                if (videoData.platform === 'youtube') {
+                    setTimeout(() => {
+                        if (currentPlayer && isPlayerReady) {
+                            currentPlayer.seekTo(videoData.currentTime || 0, true);
+                            if (videoData.isPlaying) {
+                                setTimeout(() => currentPlayer.playVideo(), 200);
+                            }
                         }
-                    }
-                }, 1000);
+                    }, 1000);
+                }
             }
         }
 
@@ -1496,19 +1700,21 @@
         function loadVideo() {
             const url = document.getElementById('videoUrl').value.trim();
             if (!url) {
-                alert('Please enter a YouTube URL');
+                alert('Please enter a valid URL');
                 return;
             }
             
-            const videoId = getYouTubeVideoId(url);
-            if (!videoId) {
-                alert('Invalid YouTube URL. Use format: https://www.youtube.com/watch?v=VIDEO_ID');
+            const detection = detectPlatform(url);
+            if (!detection) {
+                alert('Invalid URL. Supported platforms: YouTube, Twitch, Kick');
                 return;
             }
             
-            createYouTubePlayer(videoId);
+            createPlayer(detection.platform, detection.id);
             socket.emit('video-change', { roomId: currentRoom, url });
-            addSystemMessage('Video loaded: ' + url);
+            
+            const platformName = detection.platform.charAt(0).toUpperCase() + detection.platform.slice(1);
+            addSystemMessage(`${platformName} ${detection.platform === 'youtube' ? 'video' : 'stream'} loaded: ${detection.id}`);
         }
 
         // Chat
@@ -1560,8 +1766,8 @@
             if (confirm('Are you sure you want to leave?')) {
                 cleanupVoice();
                 
-                if (youtubePlayer) {
-                    youtubePlayer.destroy();
+                if (currentPlayer && currentPlatform === 'youtube' && currentPlayer.destroy) {
+                    currentPlayer.destroy();
                 }
                 location.reload();
             }
@@ -1606,7 +1812,7 @@
 
         // Iniciar cuando se carga la página
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('🚀 Page loaded, starting Coupether...');
+            console.log('🚀 Page loaded, starting Coupether with multi-platform support...');
             initSocket();
         });
     </script>

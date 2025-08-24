@@ -28,18 +28,20 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Almacenar salas activas
 const rooms = new Map();
 
-// Estructura de una sala mejorada
+// Estructura de una sala mejorada con soporte multi-plataforma
 class Room {
   constructor(id) {
     this.id = id;
     this.users = new Map();
     this.video = {
       url: '',
-      videoId: '', // ID del video de YouTube
+      platform: '', // 'youtube', 'twitch', 'kick'
+      videoId: '', // ID del video/stream
       currentTime: 0,
       isPlaying: false,
       lastUpdate: Date.now(),
-      duration: 0
+      duration: 0,
+      channelName: '' // Para Twitch/Kick
     };
     this.messages = [];
     this.voiceStatus = new Map(); // Estado de voz de cada usuario
@@ -83,10 +85,14 @@ class Room {
   }
 
   updateVideo(data) {
-    // Extraer ID de YouTube si es una URL completa
+    // Detectar plataforma y extraer información
     if (data.url) {
-      const videoId = this.extractYouTubeId(data.url);
-      data.videoId = videoId;
+      const videoInfo = this.parseVideoUrl(data.url);
+      if (videoInfo) {
+        data.platform = videoInfo.platform;
+        data.videoId = videoInfo.videoId;
+        data.channelName = videoInfo.channelName || '';
+      }
     }
     
     this.video = { 
@@ -97,16 +103,48 @@ class Room {
     
     console.log(`📺 Video actualizado en sala ${this.id}:`, {
       url: this.video.url,
+      platform: this.video.platform,
       videoId: this.video.videoId,
+      channelName: this.video.channelName,
       currentTime: this.video.currentTime,
       isPlaying: this.video.isPlaying
     });
   }
 
-  extractYouTubeId(url) {
-    const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
-    const match = url.match(regExp);
-    return (match && match[2].length === 11) ? match[2] : null;
+  parseVideoUrl(url) {
+    // YouTube
+    const youtubeRegExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+    const youtubeMatch = url.match(youtubeRegExp);
+    if (youtubeMatch && youtubeMatch[2].length === 11) {
+      return {
+        platform: 'youtube',
+        videoId: youtubeMatch[2]
+      };
+    }
+
+    // Twitch
+    const twitchRegExp = /(?:https?:\/\/)?(?:www\.)?twitch\.tv\/([a-zA-Z0-9_]+)/;
+    const twitchMatch = url.match(twitchRegExp);
+    if (twitchMatch) {
+      return {
+        platform: 'twitch',
+        videoId: twitchMatch[1],
+        channelName: twitchMatch[1]
+      };
+    }
+
+    // Kick
+    const kickRegExp = /(?:https?:\/\/)?(?:www\.)?kick\.com\/([a-zA-Z0-9_]+)/;
+    const kickMatch = url.match(kickRegExp);
+    if (kickMatch) {
+      return {
+        platform: 'kick',
+        videoId: kickMatch[1],
+        channelName: kickMatch[1]
+      };
+    }
+
+    return null;
   }
 
   addMessage(socketId, message) {
@@ -176,16 +214,19 @@ app.get('/test', (req, res) => {
     id,
     users: room.users.size,
     hasVideo: !!room.video.url,
+    platform: room.video.platform,
     videoId: room.video.videoId,
+    channelName: room.video.channelName,
     isPlaying: room.video.isPlaying,
     voiceStats: room.getVoiceStats(),
     createdAt: new Date(room.createdAt).toLocaleString()
   }));
 
   res.json({ 
-    message: 'Servidor funcionando correctamente', 
+    message: 'Servidor funcionando correctamente con soporte multi-plataforma', 
     timestamp: new Date().toISOString(),
     activeRooms: rooms.size,
+    supportedPlatforms: ['YouTube', 'Twitch', 'Kick'],
     rooms: roomsInfo
   });
 });
@@ -275,7 +316,7 @@ io.on('connection', (socket) => {
     });
   });
   
-  // Estado de voz (nuevo evento)
+  // Estado de voz
   socket.on('voice-status', (data) => {
     const { roomId, isMuted } = data;
     const room = rooms.get(roomId?.toUpperCase());
@@ -300,7 +341,7 @@ io.on('connection', (socket) => {
     }
   });
   
-  // Transmisión de audio (nuevo evento)
+  // Transmisión de audio
   socket.on('voice-data', (data) => {
     const { roomId, audioData } = data;
     const room = rooms.get(roomId?.toUpperCase());
@@ -321,7 +362,7 @@ io.on('connection', (socket) => {
     }
   });
   
-  // Sincronizar video (mejorado)
+  // Sincronizar video (mejorado para multi-plataforma)
   socket.on('video-sync', (data) => {
     const { roomId, url, currentTime, isPlaying } = data;
     const room = rooms.get(roomId?.toUpperCase());
@@ -338,32 +379,36 @@ io.on('connection', (socket) => {
       // Broadcast a todos los usuarios de la sala excepto el emisor
       socket.to(roomId.toUpperCase()).emit('video-synced', {
         url: room.video.url,
+        platform: room.video.platform,
         videoId: room.video.videoId,
+        channelName: room.video.channelName,
         currentTime: room.video.currentTime,
         isPlaying: room.video.isPlaying,
         timestamp: Date.now()
       });
       
-      console.log(`🔄 Video sincronizado en sala ${roomId}: ${isPlaying ? 'Playing' : 'Paused'} at ${currentTime}s`);
+      console.log(`🔄 Video sincronizado en sala ${roomId} [${room.video.platform}]: ${isPlaying ? 'Playing' : 'Paused'} at ${currentTime}s`);
     }
   });
   
-  // Cambio de video URL (mejorado)
+  // Cambio de video URL (mejorado para multi-plataforma)
   socket.on('video-change', (data) => {
     const { roomId, url } = data;
     const room = rooms.get(roomId?.toUpperCase());
     
     if (room && room.users.has(socket.id)) {
-      // Validar que sea una URL de YouTube válida
-      const videoId = room.extractYouTubeId(url);
-      if (!videoId) {
-        socket.emit('error', { message: 'URL de YouTube no válida' });
+      // Validar que sea una URL válida de alguna plataforma soportada
+      const videoInfo = room.parseVideoUrl(url);
+      if (!videoInfo) {
+        socket.emit('error', { message: 'URL no válida. Soportamos YouTube, Twitch y Kick.' });
         return;
       }
       
       room.updateVideo({ 
-        url, 
-        videoId,
+        url,
+        platform: videoInfo.platform,
+        videoId: videoInfo.videoId,
+        channelName: videoInfo.channelName || '',
         currentTime: 0, 
         isPlaying: false 
       });
@@ -371,15 +416,17 @@ io.on('connection', (socket) => {
       // Notificar a todos los usuarios de la sala
       io.to(roomId.toUpperCase()).emit('video-changed', { 
         url,
-        videoId,
+        platform: videoInfo.platform,
+        videoId: videoInfo.videoId,
+        channelName: videoInfo.channelName,
         username: room.users.get(socket.id)?.username
       });
       
-      console.log(`📺 Video cambiado en sala ${roomId}: ${url} (ID: ${videoId})`);
+      console.log(`📺 Video cambiado en sala ${roomId} [${videoInfo.platform}]: ${url}`);
     }
   });
   
-  // Solicitar sincronización (nuevo evento)
+  // Solicitar sincronización
   socket.on('request-sync', (data) => {
     const { roomId } = data;
     const room = rooms.get(roomId?.toUpperCase());
@@ -387,7 +434,9 @@ io.on('connection', (socket) => {
     if (room && room.users.has(socket.id)) {
       socket.emit('video-synced', {
         url: room.video.url,
+        platform: room.video.platform,
         videoId: room.video.videoId,
+        channelName: room.video.channelName,
         currentTime: room.video.currentTime,
         isPlaying: room.video.isPlaying,
         timestamp: Date.now()
@@ -486,10 +535,18 @@ setInterval(() => {
   const totalVoiceUsers = Array.from(rooms.values()).reduce((sum, room) => sum + room.getVoiceStats().usersWithVoice, 0);
   const totalUnmutedUsers = Array.from(rooms.values()).reduce((sum, room) => sum + room.getVoiceStats().unmutedUsers, 0);
   
+  const platformStats = {};
+  Array.from(rooms.values()).forEach(room => {
+    if (room.video.platform) {
+      platformStats[room.video.platform] = (platformStats[room.video.platform] || 0) + 1;
+    }
+  });
+  
   const stats = {
     activeRooms: rooms.size,
     totalUsers: totalUsers,
     roomsWithVideo: Array.from(rooms.values()).filter(room => room.video.url).length,
+    platformDistribution: platformStats,
     voiceStats: {
       usersWithVoice: totalVoiceUsers,
       unmutedUsers: totalUnmutedUsers
@@ -520,6 +577,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`⏰ Iniciado: ${new Date().toLocaleString()}`);
   console.log(`🔧 Modo: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🎤 Soporte de voz: Habilitado`);
+  console.log(`📺 Plataformas: YouTube, Twitch, Kick`);
   console.log('================================\n');
   
   // Verificar que el archivo index.html existe
