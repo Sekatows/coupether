@@ -35,7 +35,7 @@ class Room {
     this.users = new Map();
     this.video = {
       url: '',
-      platform: '', // 'youtube', 'twitch', 'kick'
+      platform: '', // 'youtube', 'twitch', 'kick', 'drive'
       videoId: '', // ID del video/stream
       currentTime: 0,
       isPlaying: false,
@@ -144,6 +144,16 @@ class Room {
       };
     }
 
+    // Google Drive
+    const driveRegExp = /(?:https?:\/\/)?(?:drive\.google\.com\/file\/d\/|drive\.google\.com\/open\?id=)([a-zA-Z0-9_-]+)/;
+    const driveMatch = url.match(driveRegExp);
+    if (driveMatch) {
+      return {
+        platform: 'drive',
+        videoId: driveMatch[1]
+      };
+    }
+
     return null;
   }
 
@@ -226,7 +236,7 @@ app.get('/test', (req, res) => {
     message: 'Servidor funcionando correctamente con soporte multi-plataforma', 
     timestamp: new Date().toISOString(),
     activeRooms: rooms.size,
-    supportedPlatforms: ['YouTube', 'Twitch', 'Kick'],
+    supportedPlatforms: ['YouTube', 'Twitch', 'Kick', 'Google Drive'],
     rooms: roomsInfo
   });
 });
@@ -400,7 +410,7 @@ io.on('connection', (socket) => {
       // Validar que sea una URL válida de alguna plataforma soportada
       const videoInfo = room.parseVideoUrl(url);
       if (!videoInfo) {
-        socket.emit('error', { message: 'URL no válida. Soportamos YouTube, Twitch y Kick.' });
+        socket.emit('error', { message: 'URL no válida. Soportamos YouTube, Twitch, Kick y Google Drive.' });
         return;
       }
       
@@ -577,7 +587,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`⏰ Iniciado: ${new Date().toLocaleString()}`);
   console.log(`🔧 Modo: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🎤 Soporte de voz: Habilitado`);
-  console.log(`📺 Plataformas: YouTube, Twitch, Kick`);
+  console.log(`📺 Plataformas: YouTube, Twitch, Kick, Google Drive`);
   console.log('================================\n');
   
   // Verificar que el archivo index.html existe

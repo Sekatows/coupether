@@ -182,6 +182,12 @@
             border: 1px solid rgba(83, 255, 26, 0.3);
         }
 
+        .platform-indicator.drive {
+            background: rgba(52, 168, 83, 0.2);
+            color: #34a853;
+            border: 1px solid rgba(52, 168, 83, 0.3);
+        }
+
         /* Botones */
         .btn-load, .btn-leave {
             padding: 10px 16px;
@@ -286,6 +292,12 @@
             background: rgba(83, 255, 26, 0.1);
             color: #53ff1a;
             border: 1px solid rgba(83, 255, 26, 0.2);
+        }
+
+        .platform-badge.drive {
+            background: rgba(52, 168, 83, 0.1);
+            color: #34a853;
+            border: 1px solid rgba(52, 168, 83, 0.2);
         }
 
         .actions-grid {
@@ -875,7 +887,7 @@
                 
                 <!-- URL Input solo visible en sala -->
                 <div id="urlInputNav" class="url-input-container hidden">
-                    <input type="text" id="videoUrl" placeholder="Paste YouTube, Twitch or Kick URL here..." class="video-url-input">
+                    <input type="text" id="videoUrl" placeholder="Paste YouTube, Twitch, Kick or Google Drive URL here..." class="video-url-input">
                     <div id="platformIndicator" class="platform-indicator">
                         <span id="platformText">Platform</span>
                     </div>
@@ -904,6 +916,7 @@
                     <span class="platform-badge youtube">YouTube</span>
                     <span class="platform-badge twitch">Twitch</span>
                     <span class="platform-badge kick">Kick</span>
+                    <span class="platform-badge drive">Google Drive</span>
                 </div>
             </div>
             
@@ -936,7 +949,7 @@
                             <h3>Ready to watch together?</h3>
                             <p>Paste a URL above to get started</p>
                             <div class="supported-urls">
-                                YouTube • Twitch • Kick
+                                YouTube • Twitch • Kick • Google Drive
                             </div>
                         </div>
                     </div>
@@ -1060,6 +1073,12 @@
                 return { platform: 'kick', id: kickMatch[1] };
             }
             
+            // Google Drive
+            const driveMatch = url.match(/(?:https?:\/\/)?(?:drive\.google\.com\/file\/d\/|drive\.google\.com\/open\?id=)([a-zA-Z0-9_-]+)/);
+            if (driveMatch) {
+                return { platform: 'drive', id: driveMatch[1] };
+            }
+            
             return null;
         }
 
@@ -1075,7 +1094,15 @@
             
             indicator.style.display = 'flex';
             indicator.className = `platform-indicator ${platform}`;
-            text.textContent = platform.charAt(0).toUpperCase() + platform.slice(1);
+            
+            const platformNames = {
+                youtube: 'YouTube',
+                twitch: 'Twitch',
+                kick: 'Kick',
+                drive: 'Drive'
+            };
+            
+            text.textContent = platformNames[platform] || platform.charAt(0).toUpperCase() + platform.slice(1);
         }
 
         // Detectar plataforma mientras se escribe
@@ -1105,8 +1132,10 @@
         function createPlayer(platform, videoId) {
             // Limpiar reproductor anterior
             if (currentPlayer) {
-                if (platform === 'youtube' && currentPlayer.destroy) {
+                if (currentPlatform === 'youtube' && currentPlayer.destroy) {
                     currentPlayer.destroy();
+                } else if (currentPlatform === 'drive' && currentPlayer.pause) {
+                    currentPlayer.pause();
                 }
                 currentPlayer = null;
             }
@@ -1116,6 +1145,7 @@
             playerContainer.innerHTML = '';
 
             currentPlatform = platform;
+            isPlayerReady = false;
 
             switch (platform) {
                 case 'youtube':
@@ -1126,6 +1156,9 @@
                     break;
                 case 'kick':
                     createKickPlayer(videoId);
+                    break;
+                case 'drive':
+                    createDrivePlayer(videoId);
                     break;
             }
         }
@@ -1188,6 +1221,82 @@
                 isPlayerReady = true;
                 console.log('📺 Kick player ready');
             }, 1000);
+        }
+
+        // Crear reproductor de Google Drive
+        function createDrivePlayer(fileId) {
+            const video = document.createElement('video');
+            video.src = `https://drive.google.com/uc?export=download&id=${fileId}`;
+            video.width = '100%';
+            video.height = '100%';
+            video.controls = true;
+            video.style.width = '100%';
+            video.style.height = '100%';
+            video.style.backgroundColor = '#000';
+            
+            // Eventos del reproductor de Drive
+            video.onloadedmetadata = () => {
+                isPlayerReady = true;
+                console.log('📺 Google Drive player ready');
+                console.log(`📹 Video duration: ${video.duration}s`);
+            };
+
+            video.onplay = () => {
+                if (!isSyncing) {
+                    syncDriveVideo(true);
+                }
+            };
+
+            video.onpause = () => {
+                if (!isSyncing) {
+                    syncDriveVideo(false);
+                }
+            };
+
+            video.onseeked = () => {
+                if (!isSyncing) {
+                    syncDriveVideo(null, video.currentTime);
+                }
+            };
+
+            video.ontimeupdate = () => {
+                if (!isSyncing) {
+                    const now = Date.now();
+                    if (now - lastSyncTime > 5000) { // Sincronizar cada 5 segundos
+                        syncDriveVideo(null, video.currentTime);
+                    }
+                }
+            };
+
+            video.onerror = (e) => {
+                console.error('❌ Error loading Google Drive video:', e);
+                addSystemMessage('Error loading Google Drive video. Make sure the file is publicly accessible.');
+            };
+            
+            document.getElementById('player').appendChild(video);
+            currentPlayer = video;
+        }
+
+        // Función específica para sincronizar videos de Drive
+        function syncDriveVideo(isPlaying = null, currentTime = null) {
+            if (!currentPlayer || currentPlatform !== 'drive' || !currentRoom) return;
+            
+            const now = Date.now();
+            if (now - lastSyncTime < syncCooldown) return;
+
+            const videoCurrentTime = currentTime !== null ? currentTime : currentPlayer.currentTime;
+            const videoIsPlaying = isPlaying !== null ? isPlaying : !currentPlayer.paused;
+            
+            lastSyncTime = now;
+            
+            socket.emit('video-sync', {
+                roomId: currentRoom,
+                currentTime: videoCurrentTime,
+                isPlaying: videoIsPlaying,
+                timestamp: now
+            });
+
+            console.log(`🔄 Google Drive video synced: ${videoIsPlaying ? 'Playing' : 'Paused'} at ${videoCurrentTime.toFixed(2)}s`);
         }
 
         function onPlayerReady(event) {
@@ -1484,7 +1593,6 @@
             
             isSyncing = true;
             
-            // Solo sincronizar YouTube (las otras plataformas son streams en vivo)
             if (currentPlatform === 'youtube') {
                 const adjustedTime = data.currentTime + latency + syncBuffer;
                 const currentTime = currentPlayer.getCurrentTime();
@@ -1503,6 +1611,30 @@
                         currentPlayer.pauseVideo();
                     }
                 }, 50);
+                
+            } else if (currentPlatform === 'drive') {
+                const adjustedTime = data.currentTime + latency;
+                const currentTime = currentPlayer.currentTime;
+                const timeDiff = Math.abs(currentTime - adjustedTime);
+                
+                if (timeDiff > syncThreshold) {
+                    currentPlayer.currentTime = adjustedTime;
+                    console.log(`🔄 Drive ajustando tiempo: ${timeDiff.toFixed(2)}s de diferencia`);
+                }
+                
+                setTimeout(() => {
+                    if (data.isPlaying && currentPlayer.paused) {
+                        currentPlayer.play().catch(e => {
+                            console.error('Error al reproducir video de Drive:', e);
+                            if (e.name === 'NotAllowedError') {
+                                addSystemMessage('Click anywhere to enable video autoplay');
+                            }
+                        });
+                    } else if (!data.isPlaying && !currentPlayer.paused) {
+                        currentPlayer.pause();
+                    }
+                }, 50);
+                
             } else {
                 console.log(`🔄 ${currentPlatform} sincronización (streams en vivo no requieren sync de tiempo)`);
             }
@@ -1569,7 +1701,13 @@
                     createPlayer(data.platform, data.videoId);
                     const platformName = data.platform.charAt(0).toUpperCase() + data.platform.slice(1);
                     const displayName = data.channelName || data.videoId;
-                    addSystemMessage(`${platformName} ${data.platform === 'youtube' ? 'video' : 'stream'} changed: ${displayName}`);
+                    
+                    let mediaType = 'video';
+                    if (data.platform === 'twitch' || data.platform === 'kick') {
+                        mediaType = 'stream';
+                    }
+                    
+                    addSystemMessage(`${platformName} ${mediaType} changed: ${displayName}`);
                 }
             });
 
@@ -1602,13 +1740,20 @@
                 document.getElementById('videoUrl').value = videoData.url || '';
                 updatePlatformIndicator(videoData.platform);
                 
-                // Solo sincronizar tiempo para YouTube
-                if (videoData.platform === 'youtube') {
+                // Sincronizar tiempo para YouTube y Drive
+                if (videoData.platform === 'youtube' || videoData.platform === 'drive') {
                     setTimeout(() => {
                         if (currentPlayer && isPlayerReady) {
-                            currentPlayer.seekTo(videoData.currentTime || 0, true);
-                            if (videoData.isPlaying) {
-                                setTimeout(() => currentPlayer.playVideo(), 200);
+                            if (videoData.platform === 'youtube') {
+                                currentPlayer.seekTo(videoData.currentTime || 0, true);
+                                if (videoData.isPlaying) {
+                                    setTimeout(() => currentPlayer.playVideo(), 200);
+                                }
+                            } else if (videoData.platform === 'drive') {
+                                currentPlayer.currentTime = videoData.currentTime || 0;
+                                if (videoData.isPlaying) {
+                                    setTimeout(() => currentPlayer.play().catch(console.error), 200);
+                                }
                             }
                         }
                     }, 1000);
@@ -1706,7 +1851,7 @@
             
             const detection = detectPlatform(url);
             if (!detection) {
-                alert('Invalid URL. Supported platforms: YouTube, Twitch, Kick');
+                alert('Invalid URL. Supported platforms: YouTube, Twitch, Kick, Google Drive');
                 return;
             }
             
@@ -1714,7 +1859,12 @@
             socket.emit('video-change', { roomId: currentRoom, url });
             
             const platformName = detection.platform.charAt(0).toUpperCase() + detection.platform.slice(1);
-            addSystemMessage(`${platformName} ${detection.platform === 'youtube' ? 'video' : 'stream'} loaded: ${detection.id}`);
+            let mediaType = 'video';
+            if (detection.platform === 'twitch' || detection.platform === 'kick') {
+                mediaType = 'stream';
+            }
+            
+            addSystemMessage(`${platformName} ${mediaType} loaded: ${detection.id}`);
         }
 
         // Chat
@@ -1766,8 +1916,12 @@
             if (confirm('Are you sure you want to leave?')) {
                 cleanupVoice();
                 
-                if (currentPlayer && currentPlatform === 'youtube' && currentPlayer.destroy) {
-                    currentPlayer.destroy();
+                if (currentPlayer) {
+                    if (currentPlatform === 'youtube' && currentPlayer.destroy) {
+                        currentPlayer.destroy();
+                    } else if (currentPlatform === 'drive' && currentPlayer.pause) {
+                        currentPlayer.pause();
+                    }
                 }
                 location.reload();
             }
@@ -1812,7 +1966,7 @@
 
         // Iniciar cuando se carga la página
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('🚀 Page loaded, starting Coupether with multi-platform support...');
+            console.log('🚀 Page loaded, starting Coupether with multi-platform support including Google Drive...');
             initSocket();
         });
     </script>
