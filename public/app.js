@@ -181,49 +181,100 @@ async function initScreenShare() {
 }
 
 function createScreenPlayer() {
-    // Limpiar reproductor anterior
-    if (currentPlayer) {
-        if (currentPlatform === 'youtube' && currentPlayer.destroy) {
-            currentPlayer.destroy();
-        } else if ((currentPlatform === 'drive' || currentPlatform === 'screen') && currentPlayer.pause) {
-            currentPlayer.pause();
-        }
-        currentPlayer = null;
-    }
+   // Limpiar reproductor anterior
+   if (currentPlayer) {
+       if (currentPlatform === 'youtube' && currentPlayer.destroy) {
+           currentPlayer.destroy();
+       } else if ((currentPlatform === 'drive' || currentPlatform === 'screen') && currentPlayer.pause) {
+           currentPlayer.pause();
+       }
+       currentPlayer = null;
+   }
 
-    document.getElementById('noVideo').style.display = 'none';
-    const playerContainer = document.getElementById('player');
-    playerContainer.innerHTML = '';
+   document.getElementById('noVideo').style.display = 'none';
+   const playerContainer = document.getElementById('player');
+   playerContainer.innerHTML = '';
 
-    currentPlatform = 'screen';
-    isPlayerReady = false;
+   currentPlatform = 'screen';
+   isPlayerReady = false;
 
-    // Crear elemento video para la pantalla compartida
-    const video = document.createElement('video');
-    video.srcObject = screenStream;
-    video.width = '100%';
-    video.height = '100%';
-    video.autoplay = true;
-    video.muted = true; // Evitar eco del audio del sistema
-    video.style.width = '100%';
-    video.style.height = '100%';
-    video.style.backgroundColor = '#000';
-    video.style.objectFit = 'contain';
-    
-    video.onloadedmetadata = () => {
-        isPlayerReady = true;
-        console.log('🖥️ Screen share player ready');
+   if (screenStream) {
+       // Usuario que comparte - usar su stream
+       const video = document.createElement('video');
+       video.srcObject = screenStream;
+       video.width = '100%';
+       video.height = '100%';
+       video.autoplay = true;
+       video.muted = false; // Permitir audio del screen share
+       video.playsInline = true;
+       video.controls = false; // Quitar controles para screen share
+       video.style.width = '100%';
+       video.style.height = '100%';
+       video.style.backgroundColor = '#000';
+       video.style.objectFit = 'contain';
+       
+       video.onloadedmetadata = () => {
+           isPlayerReady = true;
+           sendFrame(); // Iniciar envío de frames
+           console.log('🖥️ Screen share player ready');
+       };
+
+       // No necesitamos eventos de play/pause para screen share ya que es en tiempo real
+       
+       playerContainer.appendChild(video);
+       currentPlayer = video;
+
+       const canvas = document.createElement('canvas');
+       const ctx = canvas.getContext('2d');
+       canvas.width = 1920;
+       canvas.height = 1080;
+
+       const sendFrame = () => {
+           if (!screenStream || !isScreenSharing) return;
+           
+           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+           const frameData = canvas.toDataURL('image/jpeg', 0.3); // Comprimir imagen
+           
+           if (currentRoom) {
+               socket.emit('screen-frame', {
+                   roomId: currentRoom,
+                   frameData: frameData
+               });
+           }
+           
+           if (isScreenSharing) {
+               setTimeout(sendFrame, 100); // 10 FPS
+           }
+       };
+   } else {
+       // Usuarios que reciben - usar canvas para mostrar frames
+       const canvas = document.createElement('canvas');
+       canvas.width = 1920;
+       canvas.height = 1080;
+       canvas.style.width = '100%';
+       canvas.style.height = '100%';
+       canvas.style.backgroundColor = '#000';
+       canvas.style.objectFit = 'contain';
+       
+       playerContainer.appendChild(canvas);
+       currentPlayer = canvas;
+       isPlayerReady = true;
+       
+       console.log('🖥️ Screen share receiver ready');
+   }
+}
+
+
+video.onloadedmetadata = () => {
+    isPlayerReady = true;
+    sendFrame(); // Iniciar envío de frames
+    console.log('🖥️ Screen share player ready');
     };
-
-    // No necesitamos eventos de play/pause para screen share ya que es en tiempo real
-    
-    playerContainer.appendChild(video);
-    currentPlayer = video;
     
     // Actualizar la URL para mostrar que se está compartiendo pantalla
     document.getElementById('videoUrl').value = 'Screen Share Active';
     updatePlatformIndicator('screen');
-}
+
 
 function stopScreenShare() {
     if (screenStream) {
@@ -902,6 +953,20 @@ function initSocket() {
 
     socket.on('screen-share-stopped', (data) => {
         addSystemMessage(`${data.username} stopped sharing their screen`);
+    });
+
+    socket.on('screen-frame', (data) => {
+    if (currentPlatform === 'screen' && data.socketId !== socket.id) {
+        // Mostrar frame recibido de otro usuario
+        const img = new Image();
+        img.onload = () => {
+            if (currentPlayer && currentPlayer.tagName === 'CANVAS') {
+                const ctx = currentPlayer.getContext('2d');
+                ctx.drawImage(img, 0, 0, currentPlayer.width, currentPlayer.height);
+            }
+        };
+        img.src = data.frameData;
+    }
     });
 
     socket.on('error', (data) => {

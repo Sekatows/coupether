@@ -490,6 +490,7 @@ io.on('connection', (socket) => {
       console.log(`📊 Configuración de pantalla:`, settings);
     }
   });
+
   
   // Detener screen share
   socket.on('screen-share-stop', (data) => {
@@ -535,6 +536,21 @@ io.on('connection', (socket) => {
       console.log(`🖥️ ${user.username} detuvo compartir pantalla en sala ${roomId}`);
     }
   });
+
+  // Transmisión de frames de screen share
+socket.on('screen-frame', (data) => {
+    const { roomId, frameData } = data;
+    const room = rooms.get(roomId?.toUpperCase());
+    
+    if (room && room.users.has(socket.id)) {
+        // Retransmitir frame a todos excepto el emisor
+        socket.to(roomId.toUpperCase()).emit('screen-frame', {
+            frameData: frameData,
+            socketId: socket.id
+        });
+    }
+});
+
 
   // === FIN EVENTOS DE SCREEN SHARE ===
   
