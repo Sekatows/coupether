@@ -28,7 +28,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Almacenar salas activas
 const rooms = new Map();
 
-// Estructura de una sala mejorada
+// Estructura de una sala mejorada con fix de voz
 class Room {
   constructor(id) {
     this.id = id;
@@ -47,38 +47,61 @@ class Room {
   }
 
   addUser(socketId, username) {
+    const isHost = this.users.size === 0; // El primer usuario es el host
+    
     this.users.set(socketId, { 
       username, 
       joinedAt: Date.now(),
-      isHost: this.users.size === 0 // El primer usuario es el host
+      isHost: isHost
     });
     
-    // Inicializar estado de voz (silenciado por defecto)
+    // FIXED: Inicializar estado de voz - Host NO silenciado por defecto
     this.voiceStatus.set(socketId, {
-      isMuted: true,
-      isVoiceEnabled: false
+      isMuted: !isHost, // Solo el host empieza sin silenciar
+      isVoiceEnabled: false, // Nadie tiene voz habilitada inicialmente
+      hasPermission: true // Todos tienen permiso para usar voz
     });
+    
+    console.log(`👑 Usuario ${username} ${isHost ? '(HOST - VOZ ACTIVA)' : '(SILENCIADO)'} añadido a sala ${this.id}`);
   }
 
   removeUser(socketId) {
+    const user = this.users.get(socketId);
+    const wasHost = user?.isHost;
+    
     this.users.delete(socketId);
     this.voiceStatus.delete(socketId);
     
-    // Si se va el host, hacer host al siguiente usuario
-    if (this.users.size > 0) {
-      const firstUser = this.users.entries().next().value;
-      if (firstUser) {
-        firstUser[1].isHost = true;
+    // Si se va el host, hacer host al siguiente usuario y darle privilegios de voz
+    if (wasHost && this.users.size > 0) {
+      const firstUserEntry = this.users.entries().next().value;
+      if (firstUserEntry) {
+        const [newHostSocketId, newHostUser] = firstUserEntry;
+        newHostUser.isHost = true;
+        
+        // FIXED: El nuevo host también debería tener voz activa
+        this.updateVoiceStatus(newHostSocketId, {
+          isMuted: false,
+          isVoiceEnabled: true
+        });
+        
+        console.log(`👑 Nuevo host en sala ${this.id}: ${newHostUser.username} (VOZ ACTIVADA)`);
+        return { newHost: newHostUser, socketId: newHostSocketId };
       }
     }
+    return null;
   }
 
   updateVoiceStatus(socketId, status) {
     if (this.voiceStatus.has(socketId)) {
+      const currentStatus = this.voiceStatus.get(socketId);
       this.voiceStatus.set(socketId, {
-        ...this.voiceStatus.get(socketId),
+        ...currentStatus,
         ...status
       });
+      
+      const user = this.users.get(socketId);
+      console.log(`🎤 ${user?.username} en sala ${this.id}: muted=${status.isMuted !== undefined ? status.isMuted : currentStatus.isMuted}, enabled=${status.isVoiceEnabled !== undefined ? status.isVoiceEnabled : currentStatus.isVoiceEnabled}`);
     }
   }
 
@@ -179,6 +202,7 @@ app.get('/test', (req, res) => {
     videoId: room.video.videoId,
     isPlaying: room.video.isPlaying,
     voiceStats: room.getVoiceStats(),
+    host: room.getHost()?.username || 'None',
     createdAt: new Date(room.createdAt).toLocaleString()
   }));
 
@@ -221,6 +245,7 @@ app.get('/api/room/:roomId', (req, res) => {
     users: room.getUsersArray(),
     video: room.video,
     voiceStats: room.getVoiceStats(),
+    host: room.getHost(),
     createdAt: room.createdAt
   });
 });
@@ -255,7 +280,9 @@ io.on('connection', (socket) => {
     room.addUser(socket.id, username.trim());
     
     const host = room.getHost();
-    console.log(`👥 ${username} se unió a la sala ${roomId} (${room.users.size} usuarios)`);
+    const isUserHost = room.users.get(socket.id)?.isHost || false;
+    
+    console.log(`👥 ${username} se unió a la sala ${roomId} (${room.users.size} usuarios) ${isUserHost ? '- ES HOST' : ''}`);
     
     // Enviar estado actual al usuario que se une
     socket.emit('room-joined', {
@@ -263,7 +290,7 @@ io.on('connection', (socket) => {
       users: room.getUsersArray(),
       video: room.video,
       messages: room.messages.slice(-50), // Solo los últimos 50 mensajes
-      isHost: room.users.get(socket.id)?.isHost || false,
+      isHost: isUserHost,
       voiceStats: room.getVoiceStats()
     });
     
@@ -271,52 +298,61 @@ io.on('connection', (socket) => {
     socket.to(roomId.toUpperCase()).emit('user-joined', {
       username: username,
       userCount: room.users.size,
-      users: room.getUsersArray()
+      users: room.getUsersArray(),
+      isHost: isUserHost
     });
   });
   
-  // Estado de voz (nuevo evento)
+  // Estado de voz mejorado
   socket.on('voice-status', (data) => {
-    const { roomId, isMuted } = data;
+    const { roomId, isMuted, isVoiceEnabled } = data;
     const room = rooms.get(roomId?.toUpperCase());
     
     if (room && room.users.has(socket.id)) {
       const user = room.users.get(socket.id);
       
       // Actualizar estado de voz
-      room.updateVoiceStatus(socket.id, { 
-        isMuted: isMuted !== undefined ? isMuted : true,
-        isVoiceEnabled: true
-      });
+      const updateData = {};
+      if (isMuted !== undefined) updateData.isMuted = isMuted;
+      if (isVoiceEnabled !== undefined) updateData.isVoiceEnabled = isVoiceEnabled;
+      
+      room.updateVoiceStatus(socket.id, updateData);
       
       // Notificar a otros usuarios del cambio de estado
-      socket.to(roomId.toUpperCase()).emit('voice-status', {
+      socket.to(roomId.toUpperCase()).emit('voice-status-update', {
         username: user.username,
-        isMuted: isMuted,
-        isVoiceEnabled: true
+        socketId: socket.id,
+        ...updateData
       });
       
-      console.log(`🎤 ${user.username} ${isMuted ? 'silenciado' : 'activado'} micrófono en sala ${roomId}`);
+      const voiceStatus = room.voiceStatus.get(socket.id);
+      console.log(`🎤 ${user.username} cambió estado: ${voiceStatus.isMuted ? 'SILENCIADO' : 'ACTIVO'} en sala ${roomId}`);
     }
   });
   
-  // Transmisión de audio (nuevo evento)
+  // Transmisión de audio mejorada
   socket.on('voice-data', (data) => {
-    const { roomId, audioData } = data;
+    const { roomId, audioData, timestamp } = data;
     const room = rooms.get(roomId?.toUpperCase());
     
     if (room && room.users.has(socket.id)) {
       const user = room.users.get(socket.id);
       const voiceStatus = room.voiceStatus.get(socket.id);
       
-      // Solo transmitir si el usuario no está silenciado
-      if (voiceStatus && !voiceStatus.isMuted) {
+      // Solo transmitir si el usuario no está silenciado y tiene voz habilitada
+      if (voiceStatus && !voiceStatus.isMuted && voiceStatus.isVoiceEnabled) {
         // Transmitir audio a todos los usuarios excepto al emisor
         socket.to(roomId.toUpperCase()).emit('voice-data', {
           audioData: audioData,
           username: user.username,
-          socketId: socket.id
+          socketId: socket.id,
+          timestamp: timestamp || Date.now()
         });
+        
+        // Log más detallado para debug
+        console.log(`🔊 Audio transmitido de ${user.username} en sala ${roomId} (${audioData.length} bytes)`);
+      } else {
+        console.log(`🔇 Audio bloqueado de ${user.username}: muted=${voiceStatus?.isMuted}, enabled=${voiceStatus?.isVoiceEnabled}`);
       }
     }
   });
@@ -416,7 +452,7 @@ io.on('connection', (socket) => {
     socket.emit('pong', { timestamp: Date.now() });
   });
   
-  // Desconexión
+  // Desconexión mejorada
   socket.on('disconnect', (reason) => {
     console.log(`👋 Usuario desconectado: ${socket.id} (${reason})`);
     
@@ -426,24 +462,29 @@ io.on('connection', (socket) => {
         const user = room.users.get(socket.id);
         const wasHost = user.isHost;
         
-        room.removeUser(socket.id);
+        const hostChangeResult = room.removeUser(socket.id);
         
         // Notificar a otros usuarios
         socket.to(roomId).emit('user-left', {
           username: user.username,
           userCount: room.users.size,
-          users: room.getUsersArray()
+          users: room.getUsersArray(),
+          wasHost: wasHost
         });
         
-        // Si era el host, notificar el cambio
-        if (wasHost && room.users.size > 0) {
-          const newHost = room.getHost();
-          if (newHost) {
-            io.to(roomId).emit('host-changed', {
-              newHost: newHost.username
-            });
-            console.log(`👑 Nuevo host en sala ${roomId}: ${newHost.username}`);
-          }
+        // Si cambió el host, notificar
+        if (hostChangeResult && hostChangeResult.newHost) {
+          io.to(roomId).emit('host-changed', {
+            newHost: hostChangeResult.newHost.username,
+            newHostSocketId: hostChangeResult.socketId
+          });
+          
+          // FIXED: Notificar al nuevo host que active su micrófono
+          io.to(hostChangeResult.socketId).emit('became-host', {
+            message: 'You are now the host - voice activated'
+          });
+          
+          console.log(`👑 Nuevo host en sala ${roomId}: ${hostChangeResult.newHost.username} (AUTO-VOZ)`);
         }
         
         // Eliminar sala si está vacía
@@ -485,10 +526,12 @@ setInterval(() => {
   const totalUsers = Array.from(rooms.values()).reduce((sum, room) => sum + room.users.size, 0);
   const totalVoiceUsers = Array.from(rooms.values()).reduce((sum, room) => sum + room.getVoiceStats().usersWithVoice, 0);
   const totalUnmutedUsers = Array.from(rooms.values()).reduce((sum, room) => sum + room.getVoiceStats().unmutedUsers, 0);
+  const totalHosts = Array.from(rooms.values()).reduce((sum, room) => sum + (room.getHost() ? 1 : 0), 0);
   
   const stats = {
     activeRooms: rooms.size,
     totalUsers: totalUsers,
+    totalHosts: totalHosts,
     roomsWithVideo: Array.from(rooms.values()).filter(room => room.video.url).length,
     voiceStats: {
       usersWithVoice: totalVoiceUsers,
@@ -513,14 +556,15 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 server.listen(PORT, '0.0.0.0', () => {
-  console.log('\n🚀 ===== SERVIDOR INICIADO =====');
+  console.log('\n🚀 ===== SERVIDOR INICIADO CON VOICE FIX =====');
   console.log(`📍 URL: http://localhost:${PORT}`);
   console.log(`🧪 Test: http://localhost:${PORT}/test`);
   console.log(`📁 Static files: ${path.join(__dirname, 'public')}`);
   console.log(`⏰ Iniciado: ${new Date().toLocaleString()}`);
   console.log(`🔧 Modo: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🎤 Soporte de voz: Habilitado`);
-  console.log('================================\n');
+  console.log(`🎤 Soporte de voz: MEJORADO - Host auto-activo`);
+  console.log(`👑 Host privilegios: Micrófono activado por defecto`);
+  console.log('=============================================\n');
   
   // Verificar que el archivo index.html existe
   const fs = require('fs');
