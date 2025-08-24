@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Coupether - Watch Together</title>
+    <title>Coupether by Sekatow</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
         /* Reset y configuración base */
@@ -15,8 +15,8 @@
 
         body {
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: #1a1a1a;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            color: #e2e8f0;
             line-height: 1.6;
             height: 100vh;
             overflow: hidden;
@@ -25,10 +25,15 @@
         /* Container principal */
         .container {
             height: 100vh;
-            background: rgba(255, 255, 255, 0.95);
+            background: rgba(15, 23, 42, 0.95);
             backdrop-filter: blur(20px);
             display: flex;
             flex-direction: column;
+            transition: filter 0.3s ease;
+        }
+
+        .container.modal-open {
+            filter: blur(5px);
         }
 
         /* Header/Navbar */
@@ -37,8 +42,8 @@
             justify-content: space-between;
             align-items: center;
             padding: 12px 24px;
-            background: rgba(102, 126, 234, 0.1);
-            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+            background: rgba(30, 41, 59, 0.9);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1);
             backdrop-filter: blur(20px);
             z-index: 100;
             flex-shrink: 0;
@@ -47,7 +52,7 @@
         .logo {
             font-size: 24px;
             font-weight: 700;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -74,12 +79,12 @@
             align-items: center;
             gap: 12px;
             font-size: 14px;
-            color: #64748b;
+            color: #94a3b8;
             font-weight: 500;
         }
 
         .room-code-nav {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #07fe4d 0%, #87bdc7 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -92,7 +97,7 @@
             align-items: center;
             gap: 8px;
             font-size: 12px;
-            color: #64748b;
+            color: #94a3b8;
         }
 
         .status-indicator {
@@ -129,16 +134,21 @@
         .video-url-input {
             flex: 1;
             padding: 10px 16px;
-            border: 2px solid #e5e7eb;
+            border: 2px solid #374151;
             border-radius: 8px;
             font-size: 14px;
-            background: white;
+            background: #1f2937;
+            color: #e2e8f0;
             transition: border-color 0.2s ease;
         }
 
         .video-url-input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #8b5cf6;
+        }
+
+        .video-url-input::placeholder {
+            color: #9ca3af;
         }
 
         /* Botones */
@@ -155,24 +165,25 @@
         }
 
         .btn-load {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
             color: white;
         }
 
         .btn-leave {
-            background: #fee2e2;
-            color: #dc2626;
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
             font-size: 11px;
             padding: 8px 14px;
+            border: 1px solid rgba(239, 68, 68, 0.2);
         }
 
         .btn-load:hover {
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+            box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
         }
 
         .btn-leave:hover {
-            background: #fecaca;
+            background: rgba(239, 68, 68, 0.2);
         }
 
         /* Pantalla inicial */
@@ -193,7 +204,7 @@
         .home-logo {
             font-size: 48px;
             font-weight: 700;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -202,7 +213,7 @@
         }
 
         .tagline {
-            color: #64748b;
+            color: #94a3b8;
             font-size: 18px;
             font-weight: 400;
             margin: 0;
@@ -227,13 +238,15 @@
             transition: all 0.3s ease;
             text-align: left;
             font-family: inherit;
-            background: white;
-            border: 2px solid rgba(0, 0, 0, 0.05);
+            background: rgba(30, 41, 59, 0.6);
+            border: 2px solid rgba(148, 163, 184, 0.1);
+            color: #e2e8f0;
         }
 
         .action-btn:hover:not(:disabled) {
             transform: translateY(-4px);
-            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+            border-color: rgba(139, 92, 246, 0.3);
         }
 
         .action-btn:disabled {
@@ -243,7 +256,7 @@
         }
 
         .action-btn.primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
             color: white;
             border-color: transparent;
         }
@@ -262,7 +275,7 @@
         }
 
         .action-btn.secondary .btn-icon {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
             color: white;
         }
 
@@ -283,17 +296,47 @@
             opacity: 0.8;
         }
 
-        /* Formulario de unirse */
+        /* Modal overlay y formulario de unirse */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .modal-overlay.visible {
+            opacity: 1;
+            visibility: visible;
+        }
+
         .join-form {
-            margin-top: 40px;
             max-width: 400px;
+            width: 90%;
+            transform: translateY(30px);
+            transition: transform 0.3s ease;
+        }
+
+        .modal-overlay.visible .join-form {
+            transform: translateY(0);
         }
 
         .form-content {
-            background: white;
+            background: rgba(30, 41, 59, 0.95);
             padding: 32px;
             border-radius: 16px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(148, 163, 184, 0.1);
+            backdrop-filter: blur(20px);
         }
 
         .form-title {
@@ -301,7 +344,7 @@
             font-weight: 600;
             margin-bottom: 24px;
             text-align: center;
-            color: #1a1a1a;
+            color: #e2e8f0;
         }
 
         .input-group {
@@ -313,22 +356,27 @@
             font-size: 14px;
             font-weight: 500;
             margin-bottom: 8px;
-            color: #374151;
+            color: #e2e8f0;
         }
 
         .input-group input {
             width: 100%;
             padding: 16px;
-            border: 2px solid #e5e7eb;
+            border: 2px solid #374151;
             border-radius: 12px;
             font-size: 16px;
             transition: border-color 0.2s ease;
-            background: white;
+            background: #1f2937;
+            color: #e2e8f0;
+        }
+
+        .input-group input::placeholder {
+            color: #9ca3af;
         }
 
         .input-group input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #8b5cf6;
         }
 
         .form-actions {
@@ -350,22 +398,23 @@
         }
 
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
             color: white;
         }
 
         .btn-secondary {
-            background: #f3f4f6;
-            color: #374151;
+            background: rgba(55, 65, 81, 0.8);
+            color: #e2e8f0;
+            border: 1px solid #374151;
         }
 
         .btn-primary:hover {
             transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+            box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
         }
 
         .btn-secondary:hover {
-            background: #e5e7eb;
+            background: rgba(75, 85, 99, 0.8);
         }
 
         /* Layout principal - Video + Chat */
@@ -404,7 +453,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: #000;
+            background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
         }
 
         .empty-state {
@@ -439,10 +488,11 @@
             justify-content: space-between;
             align-items: center;
             padding: 16px 20px;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(30, 41, 59, 0.95);
             backdrop-filter: blur(10px);
             border-radius: 12px;
             color: white;
+            border: 1px solid rgba(148, 163, 184, 0.1);
         }
 
         .playback-controls {
@@ -455,7 +505,7 @@
             width: 40px;
             height: 40px;
             border-radius: 50%;
-            background: rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.15);
             border: none;
             display: flex;
             align-items: center;
@@ -467,7 +517,7 @@
         }
 
         .control-btn:hover:not(:disabled) {
-            background: rgba(255, 255, 255, 0.3);
+            background: rgba(139, 92, 246, 0.6);
         }
 
         .control-btn:disabled {
@@ -492,6 +542,7 @@
             border-radius: 20px;
             font-size: 13px;
             font-weight: 500;
+            border: 1px solid rgba(34, 197, 94, 0.3);
         }
 
         .sync-indicator {
@@ -510,17 +561,17 @@
         /* Panel de chat */
         .chat-panel {
             width: 350px;
-            background: white;
+            background: rgba(30, 41, 59, 0.95);
             display: flex;
             flex-direction: column;
-            border-left: 1px solid rgba(0, 0, 0, 0.05);
+            border-left: 1px solid rgba(148, 163, 184, 0.1);
             flex-shrink: 0;
         }
 
         .chat-header {
             padding: 16px 20px;
-            background: #f8fafc;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+            background: rgba(55, 65, 81, 0.8);
+            border-bottom: 1px solid rgba(148, 163, 184, 0.1);
         }
 
         .panel-title {
@@ -528,11 +579,12 @@
             font-weight: 600;
             margin: 0;
             margin-bottom: 8px;
+            color: #e2e8f0;
         }
 
         .users-count {
             font-size: 12px;
-            color: #64748b;
+            color: #94a3b8;
             font-weight: 500;
         }
 
@@ -540,7 +592,7 @@
             flex: 1;
             overflow-y: auto;
             padding: 16px;
-            background: white;
+            background: transparent;
         }
 
         .chat-message {
@@ -573,54 +625,61 @@
         }
 
         .chat-message.own .message-content {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #8b5cf6 0%, #06b6d4 100%);
             color: white;
             border-bottom-right-radius: 4px;
         }
 
         .chat-message.other .message-content {
-            background: #f3f4f6;
-            color: #1f2937;
+            background: rgba(55, 65, 81, 0.8);
+            color: #e2e8f0;
             border-bottom-left-radius: 4px;
+            border: 1px solid rgba(148, 163, 184, 0.1);
         }
 
         .system-message {
             text-align: center;
             padding: 6px 12px;
             margin: 8px 0;
-            background: #f0f9ff;
-            color: #0369a1;
+            background: rgba(6, 182, 212, 0.1);
+            color: #06b6d4;
             border-radius: 16px;
             font-size: 12px;
             font-style: italic;
             font-weight: 500;
+            border: 1px solid rgba(6, 182, 212, 0.2);
         }
 
         .message-input-container {
             display: flex;
             gap: 8px;
             padding: 16px;
-            background: #f8fafc;
-            border-top: 1px solid rgba(0, 0, 0, 0.05);
+            background: rgba(55, 65, 81, 0.8);
+            border-top: 1px solid rgba(148, 163, 184, 0.1);
         }
 
         .message-input {
             flex: 1;
             padding: 10px 12px;
-            border: 2px solid #e5e7eb;
+            border: 2px solid #374151;
             border-radius: 8px;
             font-size: 14px;
-            background: white;
+            background: #1f2937;
+            color: #e2e8f0;
             transition: border-color 0.2s ease;
+        }
+
+        .message-input::placeholder {
+            color: #9ca3af;
         }
 
         .message-input:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #8b5cf6;
         }
 
         .btn-send {
-            background: #667eea;
+            background: #8b5cf6;
             color: white;
             padding: 10px 16px;
             border-radius: 8px;
@@ -633,7 +692,7 @@
         }
 
         .btn-send:hover {
-            background: #5a67d8;
+            background: #7c3aed;
         }
 
         /* Controles de voz */
@@ -642,11 +701,11 @@
             align-items: center;
             gap: 12px;
             padding: 12px;
-            background: rgba(255, 255, 255, 0.1);
+            background: rgba(15, 23, 42, 0.8);
             backdrop-filter: blur(10px);
             border-radius: 8px;
             margin-bottom: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(148, 163, 184, 0.1);
         }
 
         .mic-button {
@@ -664,20 +723,23 @@
         }
 
         .mic-button.muted {
-            background: #ef4444;
-            color: white;
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
         }
 
         .mic-button.active {
-            background: #22c55e;
-            color: white;
+            background: rgba(34, 197, 94, 0.2);
+            color: #22c55e;
             animation: pulse-mic 2s infinite;
+            border: 1px solid rgba(34, 197, 94, 0.3);
         }
 
         .mic-button.disabled {
-            background: #6b7280;
-            color: white;
+            background: rgba(107, 114, 128, 0.2);
+            color: #6b7280;
             cursor: not-allowed;
+            border: 1px solid rgba(107, 114, 128, 0.3);
         }
 
         @keyframes pulse-mic {
@@ -688,7 +750,7 @@
 
         .voice-status {
             font-size: 12px;
-            color: rgba(255, 255, 255, 0.8);
+            color: #94a3b8;
             font-weight: 500;
         }
 
@@ -720,6 +782,25 @@
             align-items: center;
             gap: 1px;
             height: 20px;
+        }
+
+        /* Custom scrollbar para chat */
+        .chat-messages::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .chat-messages::-webkit-scrollbar-track {
+            background: rgba(55, 65, 81, 0.3);
+            border-radius: 10px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: rgba(139, 92, 246, 0.6);
+            border-radius: 10px;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb:hover {
+            background: rgba(139, 92, 246, 0.8);
         }
 
         /* Utilidades */
@@ -772,8 +853,23 @@
                 position: static;
                 margin: 0;
                 border-radius: 0;
-                background: rgba(0, 0, 0, 0.9);
+                background: rgba(30, 41, 59, 0.95);
             }
+        }
+
+        /* Efectos adicionales de glassmorphism */
+        .container::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(circle at 20% 30%, rgba(139, 92, 246, 0.1) 0%, transparent 50%),
+                radial-gradient(circle at 80% 70%, rgba(6, 182, 212, 0.1) 0%, transparent 50%);
+            pointer-events: none;
+            z-index: -1;
         }
     </style>
 </head>
@@ -829,24 +925,6 @@
                         <span class="btn-subtitle">Enter an existing room</span>
                     </div>
                 </button>
-            </div>
-            
-            <div id="joinForm" class="join-form hidden">
-                <div class="form-content">
-                    <h3 class="form-title">Join a Room</h3>
-                    <div class="input-group">
-                        <label for="username">Your name</label>
-                        <input type="text" id="username" placeholder="Enter your name" maxlength="20">
-                    </div>
-                    <div class="input-group">
-                        <label for="roomCode">Room code</label>
-                        <input type="text" id="roomCode" placeholder="Enter room code" maxlength="8" style="text-transform: uppercase;">
-                    </div>
-                    <div class="form-actions">
-                        <button onclick="joinRoom()" class="btn-primary">Join Room</button>
-                        <button onclick="hideJoinForm()" class="btn-secondary">Cancel</button>
-                    </div>
-                </div>
             </div>
         </div>
 
@@ -906,6 +984,27 @@
                 <div class="message-input-container">
                     <input type="text" id="messageInput" placeholder="Type a message..." class="message-input">
                     <button onclick="sendMessage()" class="btn-send">Send</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de formulario de unirse -->
+    <div id="joinFormModal" class="modal-overlay">
+        <div class="join-form">
+            <div class="form-content">
+                <h3 class="form-title">Join a Room</h3>
+                <div class="input-group">
+                    <label for="username">Your name</label>
+                    <input type="text" id="username" placeholder="Enter your name" maxlength="20">
+                </div>
+                <div class="input-group">
+                    <label for="roomCode">Room code</label>
+                    <input type="text" id="roomCode" placeholder="Enter room code" maxlength="8" style="text-transform: uppercase;">
+                </div>
+                <div class="form-actions">
+                    <button onclick="joinRoom()" class="btn-primary">Join Room</button>
+                    <button onclick="hideJoinForm()" class="btn-secondary">Cancel</button>
                 </div>
             </div>
         </div>
@@ -1485,12 +1584,20 @@
 
         // Mostrar formulario de unirse
         function showJoinForm() {
-            document.getElementById('joinForm').classList.remove('hidden');
+            const modal = document.getElementById('joinFormModal');
+            const container = document.querySelector('.container');
+            
+            modal.classList.add('visible');
+            container.classList.add('modal-open');
             document.getElementById('username').focus();
         }
 
         function hideJoinForm() {
-            document.getElementById('joinForm').classList.add('hidden');
+            const modal = document.getElementById('joinFormModal');
+            const container = document.querySelector('.container');
+            
+            modal.classList.remove('visible');
+            container.classList.remove('modal-open');
         }
 
         // Unirse a sala
@@ -1505,6 +1612,7 @@
 
             currentUser = username;
             socket.emit('join-room', { roomId: roomCode, username });
+            hideJoinForm();
         }
 
         // Mostrar pantalla de sala
@@ -1616,12 +1724,23 @@
             }
         }
 
+        // Cerrar modal al hacer clic en el overlay
+        document.getElementById('joinFormModal').addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) {
+                hideJoinForm();
+            }
+        });
+
         // Manejadores de eventos de teclado
         document.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') {
                 if (e.target.id === 'messageInput') sendMessage();
                 if (e.target.id === 'roomCode') joinRoom();
                 if (e.target.id === 'videoUrl') loadVideo();
+            }
+            
+            if (e.key === 'Escape') {
+                hideJoinForm();
             }
         });
 
@@ -1630,6 +1749,10 @@
             if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
                 e.preventDefault();
                 toggleMicrophone();
+            }
+            
+            if (e.key === 'Escape') {
+                hideJoinForm();
             }
         });
 
